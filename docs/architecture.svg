@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 460"
+     font-family="ui-monospace,SFMono-Regular,Menlo,monospace" font-size="13">
+  <defs>
+    <!-- forward arrowhead (points in path direction, for marker-end) -->
+    <marker id="arr-fwd" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#555"/>
+    </marker>
+    <!-- backward arrowhead (points against path direction, for marker-start) -->
+    <marker id="arr-bwd" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+      <path d="M8,0 L8,6 L0,3 z" fill="#555"/>
+    </marker>
+    <!-- green forward arrowhead (Wayland side) -->
+    <marker id="arr-grn" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#15803d"/>
+    </marker>
+    <!-- dark small downward arrow for internal proxy flow -->
+    <marker id="arr-dn" markerWidth="7" markerHeight="6" refX="3.5" refY="6" orient="auto">
+      <path d="M0,0 L7,0 L3.5,6 z" fill="#555"/>
+    </marker>
+  </defs>
+
+  <!-- canvas background -->
+  <rect width="860" height="460" fill="#f8fafc" rx="10"/>
+
+  <!-- ────────────────────────────────────────────
+       Qt App boxes (left column)
+       ──────────────────────────────────────────── -->
+
+  <rect x="20" y="55" width="155" height="50" rx="6"
+        fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="97" y="76" text-anchor="middle" font-weight="600" fill="#1e3a8a">Qt 4.8.7 App 1</text>
+  <text x="97" y="93" text-anchor="middle" font-size="11" fill="#1e40af">unmodified</text>
+
+  <rect x="20" y="165" width="155" height="50" rx="6"
+        fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="97" y="186" text-anchor="middle" font-weight="600" fill="#1e3a8a">Qt 4.8.7 App 2</text>
+  <text x="97" y="203" text-anchor="middle" font-size="11" fill="#1e40af">unmodified</text>
+
+  <rect x="20" y="275" width="155" height="50" rx="6"
+        fill="#dbeafe" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="97" y="296" text-anchor="middle" font-weight="600" fill="#1e3a8a">Qt 4.8.7 App N</text>
+  <text x="97" y="313" text-anchor="middle" font-size="11" fill="#1e40af">unmodified</text>
+
+  <!-- ────────────────────────────────────────────
+       QWS protocol label (vertical, in the gap)
+       ──────────────────────────────────────────── -->
+  <text transform="translate(247,195) rotate(-90)"
+        text-anchor="middle" font-size="11" fill="#374151">QWS protocol</text>
+  <text transform="translate(232,195) rotate(-90)"
+        text-anchor="middle" font-size="9" fill="#6b7280">Unix socket + POSIX/SysV shm</text>
+
+  <!-- ────────────────────────────────────────────
+       Bidirectional arrows: apps ↔ proxy
+       ──────────────────────────────────────────── -->
+  <!-- App 1 ↔ libqwsproto -->
+  <line x1="175" y1="80" x2="300" y2="90"
+        stroke="#555" stroke-width="1.3" stroke-dasharray="5,3"
+        marker-start="url(#arr-bwd)" marker-end="url(#arr-fwd)"/>
+  <!-- App 2 ↔ window mapper -->
+  <line x1="175" y1="190" x2="300" y2="179"
+        stroke="#555" stroke-width="1.3" stroke-dasharray="5,3"
+        marker-start="url(#arr-bwd)" marker-end="url(#arr-fwd)"/>
+  <!-- App N ↔ input router -->
+  <line x1="175" y1="300" x2="300" y2="256"
+        stroke="#555" stroke-width="1.3" stroke-dasharray="5,3"
+        marker-start="url(#arr-bwd)" marker-end="url(#arr-fwd)"/>
+
+  <!-- ────────────────────────────────────────────
+       Proxy outer box
+       ──────────────────────────────────────────── -->
+  <rect x="285" y="25" width="295" height="340" rx="8"
+        fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+  <text x="432" y="47" text-anchor="middle" font-size="14"
+        font-weight="700" fill="#15803d">qwswayland</text>
+
+  <!-- libqwsproto -->
+  <rect x="300" y="55" width="265" height="70" rx="5"
+        fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="432" y="77"  text-anchor="middle" font-weight="600" fill="#166534">libqwsproto</text>
+  <text x="432" y="93"  text-anchor="middle" font-size="11"    fill="#166534">QWS wire protocol · parser / serialiser</text>
+  <text x="432" y="108" text-anchor="middle" font-size="11"    fill="#166534">Unix socket + shared-memory transport</text>
+
+  <line x1="432" y1="126" x2="432" y2="143"
+        stroke="#555" stroke-width="1.3" marker-end="url(#arr-fwd)"/>
+
+  <!-- Window mapper -->
+  <rect x="300" y="144" width="265" height="70" rx="5"
+        fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="432" y="166" text-anchor="middle" font-weight="600" fill="#166534">Window mapper</text>
+  <text x="432" y="182" text-anchor="middle" font-size="11"    fill="#166534">QWS wid → wl_surface</text>
+  <text x="432" y="197" text-anchor="middle" font-size="11"    fill="#166534">xdg_toplevel · wl_subsurface</text>
+
+  <line x1="432" y1="215" x2="432" y2="229"
+        stroke="#555" stroke-width="1.3" marker-end="url(#arr-fwd)"/>
+
+  <!-- Input router -->
+  <rect x="300" y="230" width="265" height="52" rx="5"
+        fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="432" y="252" text-anchor="middle" font-weight="600" fill="#166534">Input router</text>
+  <text x="432" y="268" text-anchor="middle" font-size="11"    fill="#166534">pointer · keyboard → QWS events</text>
+
+  <line x1="432" y1="283" x2="432" y2="297"
+        stroke="#555" stroke-width="1.3" marker-end="url(#arr-fwd)"/>
+
+  <!-- libwayland-client -->
+  <rect x="300" y="298" width="265" height="50" rx="5"
+        fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="432" y="320" text-anchor="middle" font-weight="600" fill="#166534">libwayland-client</text>
+  <text x="432" y="336" text-anchor="middle" font-size="11"    fill="#166534">Wayland protocol transport</text>
+
+  <!-- ────────────────────────────────────────────
+       Arrow: proxy → Wayland Compositor
+       (exits right edge of proxy box at mid-height)
+       ──────────────────────────────────────────── -->
+  <line x1="580" y1="210" x2="690" y2="210"
+        stroke="#15803d" stroke-width="1.6" marker-end="url(#arr-grn)"/>
+  <text x="635" y="202" text-anchor="middle" font-size="10" fill="#15803d">Wayland protocol</text>
+
+  <!-- ────────────────────────────────────────────
+       Wayland Compositor box (right)
+       ──────────────────────────────────────────── -->
+  <rect x="690" y="130" width="148" height="160" rx="6"
+        fill="#f3e8ff" stroke="#c084fc" stroke-width="1.5"/>
+  <text x="764" y="156" text-anchor="middle" font-weight="700" fill="#6b21a8">Wayland</text>
+  <text x="764" y="174" text-anchor="middle" font-weight="700" fill="#6b21a8">Compositor</text>
+  <line x1="704" y1="182" x2="824" y2="182" stroke="#c084fc" stroke-width="1"/>
+  <text x="764" y="200" text-anchor="middle" font-size="11" fill="#7e22ce">weston</text>
+  <text x="764" y="216" text-anchor="middle" font-size="11" fill="#7e22ce">sway</text>
+  <text x="764" y="232" text-anchor="middle" font-size="11" fill="#7e22ce">KWin</text>
+  <text x="764" y="248" text-anchor="middle" font-size="11" fill="#7e22ce">…</text>
+</svg>

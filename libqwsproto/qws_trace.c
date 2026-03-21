@@ -1,0 +1,663 @@
+/*
+ * qws_trace.c - QWS protocol tracing implementation
+ * SPDX-License-Identifier: MIT
+ */
+
+#define _POSIX_C_SOURCE 200809L
+
+#include "qws_trace.h"
+#include "qws_server_helpers.h"
+#include <stdlib.h>
+#include <alloca.h>
+#include <string.h>
+#include <ctype.h>
+#include <time.h>
+#include <sys/time.h>
+
+/* ================================================================
+ * Global state
+ * ================================================================ */
+
+static int       g_trace_level    = QWS_TRACE_OFF;
+static FILE     *g_trace_output   = NULL;
+static uint64_t  g_exclude_cmd_mask = 0;
+static uint64_t  g_exclude_evt_mask = 0;
+
+static FILE *trace_fp(void)
+{
+    return g_trace_output ? g_trace_output : stderr;
+}
+
+void qws_trace_set_level(int level)
+{
+    g_trace_level = level;
+}
+
+int qws_trace_get_level(void)
+{
+    return g_trace_level;
+}
+
+void qws_trace_set_output(FILE *fp)
+{
+    g_trace_output = fp;
+}
+
+void qws_trace_set_exclude_mask(uint64_t cmd_mask, uint64_t evt_mask)
+{
+    g_exclude_cmd_mask = cmd_mask;
+    g_exclude_evt_mask = evt_mask;
+}
+
+void qws_trace_get_exclude_mask(uint64_t *cmd_mask, uint64_t *evt_mask)
+{
+    if (cmd_mask) *cmd_mask = g_exclude_cmd_mask;
+    if (evt_mask) *evt_mask = g_exclude_evt_mask;
+}
+
+/* ================================================================
+ * Timestamp helper
+ * ================================================================ */
+
+static void print_timestamp(FILE *fp)
+{
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    struct tm tm;
+    localtime_r(&tv.tv_sec, &tm);
+    fprintf(fp, "[%02d:%02d:%02d.%03ld] ",
+            tm.tm_hour, tm.tm_min, tm.tm_sec,
+            (long)(tv.tv_usec / 1000));
+}
+
+/* ================================================================
+ * Hex dump
+ * ================================================================ */
+
+void qws_trace_hexdump(FILE *fp, const char *indent,
+                         const void *data, size_t len)
+{
+    const uint8_t *p = (const uint8_t *)data;
+    const char *pfx = indent ? indent : "  ";
+
+    for (size_t off = 0; off < len; off += 16) {
+        fprintf(fp, "%s%04zx: ", pfx, off);
+
+        /* Hex bytes */
+        for (size_t i = 0; i < 16; i++) {
+            if (off + i < len)
+                fprintf(fp, "%02x ", p[off + i]);
+            else
+                fprintf(fp, "   ");
+            if (i == 7)
+                fprintf(fp, " ");
+        }
+
+        /* ASCII */
+        fprintf(fp, " |");
+        for (size_t i = 0; i < 16 && (off + i) < len; i++) {
+            uint8_t c = p[off + i];
+            fprintf(fp, "%c", (c >= 0x20 && c < 0x7f) ? (char)c : '.');
+        }
+        fprintf(fp, "|\n");
+    }
+}
+
+/* ================================================================
+ * Qt enum value decoders (for readable output)
+ * ================================================================ */
+
+static const char *qt_mouse_button_str(int32_t state)
+{
+    static char buf[128];
+    buf[0] = '\0';
+
+    if (state == 0) return "NoButton";
+    if (state & 0x01) strcat(buf, "Left");
+    if (state & 0x02) { if (buf[0]) strcat(buf, "|"); strcat(buf, "Right"); }
+    if (state & 0x04) { if (buf[0]) strcat(buf, "|"); strcat(buf, "Middle"); }
+    if (state & 0x08) { if (buf[0]) strcat(buf, "|"); strcat(buf, "XButton1"); }
+    if (state & 0x10) { if (buf[0]) strcat(buf, "|"); strcat(buf, "XButton2"); }
+
+    /* Keyboard modifiers in upper bits */
+    if (state & 0x02000000) { if (buf[0]) strcat(buf, "+"); strcat(buf, "Shift"); }
+    if (state & 0x04000000) { if (buf[0]) strcat(buf, "+"); strcat(buf, "Ctrl"); }
+    if (state & 0x08000000) { if (buf[0]) strcat(buf, "+"); strcat(buf, "Alt"); }
+    if (state & 0x10000000) { if (buf[0]) strcat(buf, "+"); strcat(buf, "Meta"); }
+
+    return buf[0] ? buf : "0";
+}
+
+
+static void print_surface_flags(FILE *fp, int32_t flags)
+{
+    if (flags == 0) { fprintf(fp, "0"); return; }
+    bool first = true;
+    if (flags & QWS_SURFACE_REGION_RESERVED) { fprintf(fp, "RegionReserved"); first = false; }
+    if (flags & QWS_SURFACE_BUFFERED)  { fprintf(fp, "%sBuffered",  first ? "" : "|"); first = false; }
+    if (flags & QWS_SURFACE_OPAQUE)    { fprintf(fp, "%sOpaque",    first ? "" : "|"); }
+}
+
+static void print_rects(FILE *fp, const qws_rect_t *rects, int nr_rects) {
+    for (int i = 0; i < nr_rects; i++) {
+        fprintf(fp, "        rect[%d]: (%d,%d) (%d,%d)\n",
+        i, rects[i].x1, rects[i].y1, rects[i].x2, rects[i].y2);
+    }
+}
+
+/* ================================================================
+ * Event field decoder
+ * ================================================================ */
+
+void qws_trace_decode_event(FILE *fp, int32_t type,
+                              const void *simple_data, int32_t simple_len,
+                              const void *raw_data, int32_t raw_len)
+{
+    (void)raw_data;
+
+    switch (type) {
+
+    case QWS_EVT_CONNECTED: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_connected_t)) {
+            const qws_evt_connected_t *d = simple_data;
+            fprintf(fp, "      client_id=%d, server_shm_id=%d, display_spec_len=%d\n",
+                    d->client_id, d->server_shm_id, d->len);
+            if (raw_data && d->len > 0) {
+                int plen = d->len;
+                if (plen > 80) plen = 80;
+                fprintf(fp, "        display_spec=\"%.*s\"\n",
+                        plen, (const char *)raw_data);
+            }
+        }
+        break;
+    }
+
+    case QWS_EVT_MOUSE: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_mouse_t)) {
+            const qws_evt_mouse_t *d = simple_data;
+            fprintf(fp, "      window=%d, pos=(%d,%d), state=%s(0x%x), time=%dms\n",
+                    d->window, d->x_root, d->y_root,
+                    qt_mouse_button_str(d->state), d->state, d->time);
+        }
+        break;
+    }
+
+    case QWS_EVT_KEY: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_key_t)) {
+            const qws_evt_key_t *d = simple_data;
+            fprintf(fp, "      window=%d, unicode=0x%x('%c'), keycode=0x%x, "
+                    "mod=0x%x, %s%s\n",
+                    d->window, d->unicode,
+                    (d->unicode >= 0x20 && d->unicode < 0x7f) ? (char)d->unicode : '?',
+                    d->keycode, d->modifiers,
+                    (d->flags & QWS_KEY_FLAG_PRESS) ? "PRESS" : "RELEASE",
+                    (d->flags & QWS_KEY_FLAG_AUTO_REPEAT) ? " (repeat)" : "");
+        }
+        break;
+    }
+
+    case QWS_EVT_FOCUS: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_focus_t)) {
+            const qws_evt_focus_t *d = simple_data;
+            fprintf(fp, "      window=%d, %s\n",
+                    d->window, d->get_focus ? "FOCUS_IN" : "FOCUS_OUT");
+        }
+        break;
+    }
+
+    case QWS_EVT_REGION: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_region_t)) {
+            const qws_evt_region_t *d = simple_data;
+            fprintf(fp, "      window=%d, nrects=%d, type=%d\n",
+                    d->window, d->nrectangles, d->type);
+            /* Decode rectangles from raw data */
+            if (raw_data && raw_len > 0)
+                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+        }
+        break;
+    }
+
+    case QWS_EVT_CREATION: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_creation_t)) {
+            const qws_evt_creation_t *d = simple_data;
+            fprintf(fp, "      object_id=%d, count=%d (range %d..%d)\n",
+                    d->object_id, d->count,
+                    d->object_id, d->object_id + d->count - 1);
+        }
+        break;
+    }
+
+    case QWS_EVT_MAX_WINDOW_RECT: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_max_window_rect_t)) {
+            const qws_evt_max_window_rect_t *d = simple_data;
+            fprintf(fp, "      window=%d\n", d->window);
+            print_rects(fp, &d->rect, 1);
+        }
+        break;
+    }
+
+    case QWS_EVT_PROPERTY_NOTIFY: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_property_notify_t)) {
+            const qws_evt_property_notify_t *d = simple_data;
+            fprintf(fp, "      window=%d, property=%d, state=%s\n",
+                    d->window, d->property,
+                    d->state == 0 ? "Changed" : "Deleted");
+        }
+        break;
+    }
+
+    case QWS_EVT_PROPERTY_REPLY: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_property_reply_t)) {
+            const qws_evt_property_reply_t *d = simple_data;
+            fprintf(fp, "      window=%d, property=%d, value_len=%d\n",
+                    d->window, d->property, d->len);
+        }
+        break;
+    }
+
+    case QWS_EVT_WINDOW_OPERATION: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_window_operation_t)) {
+            const qws_evt_window_operation_t *d = simple_data;
+            fprintf(fp, "      window=%d, operation=%d\n",
+                    d->window, d->operation);
+        }
+        break;
+    }
+
+    case QWS_EVT_EMBED: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_embed_t)) {
+            const qws_evt_embed_t *d = simple_data;
+            fprintf(fp, "      window=%d, type=%d\n",
+                    d->window, d->type);
+        }
+        break;
+    }
+
+    default:
+        if (simple_len > 0 && simple_data) {
+            /* Generic: show first int which is usually window id */
+            const int32_t *p = simple_data;
+            fprintf(fp, "      [field0=%d (0x%x)]\n", p[0], p[0]);
+        }
+        break;
+    }
+}
+
+/* ================================================================
+ * Command field decoder
+ * ================================================================ */
+
+static void print_unicode_field(FILE *fp, const char *field_name, 
+        const wchar_t *field_value, size_t field_len) {
+    char *value;
+
+    if (!field_value || field_len < 0) {
+        fprintf(fp, "      %s=<not present>\n", field_name);
+        return;
+    }
+
+    if (qws_convert_to_narrow_unicode(&value, 
+            field_value, field_len) < 0) {
+        fprintf(fp, "      %s=<invalid>\n", field_name);
+    } else {
+        fprintf(fp, "      %s=\"%s\"\n", field_name, value);
+        free(value);
+    }
+}
+
+void qws_trace_decode_command(FILE *fp, int32_t type,
+                               const void *simple_data, int32_t simple_len,
+                               const void *raw_data, int32_t raw_len)
+{
+    (void)raw_data;
+
+    switch (type) {
+
+    case QWS_CMD_IDENTIFY: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_identify_t)) {
+            const qws_cmd_identify_t *d = simple_data;
+            fprintf(fp, "      id_lock=%d, id_len=%d\n",
+                    d->id_lock, d->id_len);
+            print_unicode_field(fp, "app_name", (const wchar_t *)
+                raw_data, d->id_len * 2);
+        }
+        break;
+    }
+
+    case QWS_CMD_CREATE: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_create_t)) {
+            const qws_cmd_create_t *d = simple_data;
+            fprintf(fp, "      count=%d\n", d->count);
+        }
+        break;
+    }
+
+    case QWS_CMD_REGION: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_region_request_t)) {
+            const qws_cmd_region_request_t *d = simple_data;
+            fprintf(fp, "      window=%d, surfacekeylength=%d, surfacedatalength=%d, nrects=%d\n",
+                    d->window, d->surfacekeylength, d->surfacedatalength, d->nrectangles);
+            if (raw_data && raw_len > 0) {
+                char *surface_key;
+                const qws_cmd_region_surface_data_t *surface_data = 
+                    (qws_cmd_region_surface_data_t *) &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t) + d->surfacekeylength * 2];
+
+                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+
+                print_unicode_field(fp, "surfacekey", (const wchar_t* ) 
+                    &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t)], d->surfacekeylength * 2);
+
+                fprintf(fp, "      surfacedata=\n");
+                if (qws_convert_to_narrow_unicode(&surface_key, (const wchar_t *)
+                        &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t)], 
+                        d->surfacekeylength * 2) >= 0) {
+                    if (!strcmp(surface_key, "shm")) {
+                        fprintf(fp, "        mem_id=%d, width=%d, height=%d, lock_id=%d, format=%s\n",
+                            surface_data->shm.mem_id, surface_data->shm.width, surface_data->shm.height,
+                            surface_data->shm.lock_id, qws_image_format_name(surface_data->shm.format));
+                        fprintf(fp, "        flags=");
+                        print_surface_flags(fp, surface_data->shm.flags);
+                        fprintf(fp, "\n");
+                    } else {
+                        qws_trace_hexdump(fp, "            ",  surface_data->raw, d->surfacedatalength);
+                    }
+                } else {
+                    qws_trace_hexdump(fp, "            ",  surface_data->raw, d->surfacedatalength);
+                }
+            }
+        }
+        break;
+    }
+
+    case QWS_CMD_REGION_MOVE: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_region_move_t)) {
+            const qws_cmd_region_move_t *d = simple_data;
+            fprintf(fp, "      window=%d, delta=(%d,%d)\n",
+                    d->window, d->dx, d->dy);
+        }
+        break;
+    }
+
+    case QWS_CMD_REGION_DESTROY: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_region_destroy_t)) {
+            const qws_cmd_region_destroy_t *d = simple_data;
+            fprintf(fp, "      window=%d\n", d->window);
+        }
+        break;
+    }
+
+    case QWS_CMD_REGION_NAME: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_region_name_t)) {
+            const qws_cmd_region_name_t *d = simple_data;
+            fprintf(fp, "      window=%d, name_len=%d, caption_len=%d\n",
+                    d->window, d->name_len, d->caption_len);
+            print_unicode_field(fp, "name", (const wchar_t *)
+                raw_data, d->name_len * 2);
+            print_unicode_field(fp, "caption", (const wchar_t *)
+                &((char *) raw_data)[d->name_len * 2], d->caption_len * 2);
+        }
+        break;
+    }
+
+    case QWS_CMD_CHANGE_ALTITUDE: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_change_altitude_t)) {
+            const qws_cmd_change_altitude_t *d = simple_data;
+            fprintf(fp, "      window=%d, altitude=%s(%d), fixed=%d\n",
+                    d->window, qws_altitude_name(d->altitude),
+                    d->altitude, d->is_fixed);
+        }
+        break;
+    }
+
+    case QWS_CMD_REQUEST_FOCUS: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_request_focus_t)) {
+            const qws_cmd_request_focus_t *d = simple_data;
+            fprintf(fp, "      window=%d, flag=%d\n",
+                    d->window, d->flag);
+        }
+        break;
+    }
+
+    case QWS_CMD_SET_OPACITY: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_set_opacity_t)) {
+            const qws_cmd_set_opacity_t *d = simple_data;
+            fprintf(fp, "      window=%d, opacity=%d (%.0f%%)\n",
+                    d->window, d->opacity,
+                    (double)d->opacity * 100.0 / 255.0);
+        }
+        break;
+    }
+
+    case QWS_CMD_ADD_PROPERTY: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_add_property_t)) {
+            const qws_cmd_add_property_t *d = simple_data;
+            fprintf(fp, "      window=%d, property=%d\n",
+                    d->window, d->property);
+        }
+        break;
+    }
+
+    case QWS_CMD_SET_PROPERTY: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_set_property_t)) {
+            const qws_cmd_set_property_t *d = simple_data;
+            const char *mode_str = "Replace";
+            if (d->mode == 1) mode_str = "Append";
+            if (d->mode == 2) mode_str = "Prepend";
+            fprintf(fp, "      window=%d, property=%d, mode=%s, "
+                    "value_len=%d\n",
+                    d->window, d->property, mode_str, raw_len);
+        }
+        break;
+    }
+
+    case QWS_CMD_REMOVE_PROPERTY: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_remove_property_t)) {
+            const qws_cmd_remove_property_t *d = simple_data;
+            fprintf(fp, "      window=%d, property=%d\n",
+                    d->window, d->property);
+        }
+        break;
+    }
+
+    case QWS_CMD_GET_PROPERTY: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_get_property_t)) {
+            const qws_cmd_get_property_t *d = simple_data;
+            fprintf(fp, "      window=%d, property=%d\n",
+                    d->window, d->property);
+        }
+        break;
+    }
+
+    case QWS_CMD_GRAB_MOUSE: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_grab_mouse_t)) {
+            const qws_cmd_grab_mouse_t *d = simple_data;
+            fprintf(fp, "      window=%d, %s\n",
+                    d->window, d->grab ? "GRAB" : "UNGRAB");
+        }
+        break;
+    }
+
+    case QWS_CMD_GRAB_KEYBOARD: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_grab_keyboard_t)) {
+            const qws_cmd_grab_keyboard_t *d = simple_data;
+            fprintf(fp, "      window=%d, %s\n",
+                    d->window, d->grab ? "GRAB" : "UNGRAB");
+        }
+        break;
+    }
+
+    case QWS_CMD_DEFINE_CURSOR: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_define_cursor_t)) {
+            const qws_cmd_define_cursor_t *d = simple_data;
+            fprintf(fp, "      window=%d, size=%dx%d, hot=(%d,%d), id=%d, "
+                    "data_len=%d\n",
+                    d->window, d->width, d->height,
+                    d->hot_x, d->hot_y, d->id, raw_len);
+        }
+        break;
+    }
+
+    case QWS_CMD_SELECT_CURSOR: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_select_cursor_t)) {
+            const qws_cmd_select_cursor_t *d = simple_data;
+            fprintf(fp, "      window=%d, cursor_id=%d\n",
+                    d->window, d->cursor_id);
+        }
+        break;
+    }
+
+    case QWS_CMD_REPAINT_REGION: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_repaint_region_t)) {
+            const qws_cmd_repaint_region_t *d = simple_data;
+            fprintf(fp, "      window=%d, windowflags=%d, nrects=%d, opaque=%d\n",
+                    d->window, d->window_flags, d->nrectangles, d->opaque);
+            if (raw_data && raw_len > 0) 
+                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+        }
+        break;
+    }
+
+    case QWS_CMD_QCOP_REGISTER: {
+        fprintf(fp, "      channel (in rawData, %d bytes)\n", raw_len);
+        break;
+    }
+
+    case QWS_CMD_QCOP_SEND: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_qcop_send_t)) {
+            const qws_cmd_qcop_send_t *d = simple_data;
+            fprintf(fp, "      channel_len=%d, message_len=%d, data_len=%d\n",
+                    d->channel_len, d->message_len, d->data_len);
+        }
+        break;
+    }
+
+    case QWS_CMD_FONT: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_font_t)) {
+            const qws_cmd_font_t *d = simple_data;
+            fprintf(fp, "      type=%s\n",
+                    d->type == 0 ? "StartedUsing" : "StoppedUsing");
+            if (raw_data && raw_len > 0)
+                fprintf(fp, "      font_name=\"%.*s\"", raw_len, (const char *) raw_data);
+        }
+        break;
+    }
+
+    case QWS_CMD_IM_MOUSE: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_im_mouse_t)) {
+            const qws_cmd_im_mouse_t *d = simple_data;
+            fprintf(fp, "      window=%d, index=%d, state=%d\n",
+                    d->window, d->index, d->state);
+        }
+        break;
+    }
+
+    case QWS_CMD_IM_UPDATE: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_im_update_t)) {
+            const qws_cmd_im_update_t *d = simple_data;
+            fprintf(fp, "      window=%d, type=%s(%d), widget_id=%d\n",
+                    d->window, qws_im_update_type_name(d->type), d->type,
+                    d->widget_id);
+        }
+        break;
+    }
+
+    case QWS_CMD_SHUTDOWN: {
+        fprintf(fp, "      (no payload)\n");
+        break;
+    }
+
+    default:
+        if (simple_len > 0 && simple_data) {
+            const int32_t *p = simple_data;
+            int nfields = simple_len / 4;
+            if (nfields > 8) nfields = 8;
+            fprintf(fp, "      fields[%d]:", nfields);
+            for (int i = 0; i < nfields; i++)
+                fprintf(fp, " %d", p[i]);
+            if (simple_len / 4 > 8)
+                fprintf(fp, " ...");
+            fprintf(fp, "\n");
+        }
+        break;
+    }
+}
+
+/* ================================================================
+ * Main packet trace function
+ * ================================================================ */
+
+void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt, bool outgoing)
+{
+    if (g_trace_level <= QWS_TRACE_OFF || !pkt)
+        return;
+
+    FILE *fp = trace_fp();
+    int32_t type = pkt->header.type;
+
+    /* Check exclusion mask before doing any work */
+    if (type >= 0 && type < 64) {
+        uint64_t mask = outgoing ? g_exclude_evt_mask : g_exclude_cmd_mask;
+        if (mask & (1ULL << type))
+            return;
+    }
+
+    const char *type_name = outgoing
+        ? qws_event_type_name(type)
+        : qws_command_type_name(type);
+
+    /* Level 1+: one-line summary */
+    print_timestamp(fp);
+    fprintf(fp, "%s ", outgoing ? "<<<" : ">>>");
+    if (client_id > 0)
+        fprintf(fp, "[client %d] ", client_id);
+    fprintf(fp, "%s %s (type=0x%x, simple=%d, raw=%d)\n",
+            outgoing ? "EVT" : "CMD",
+            type_name, type,
+            pkt->header.simple_len, pkt->header.raw_len);
+
+    /* Level 2+: decoded fields */
+    if (g_trace_level >= QWS_TRACE_FIELDS) {
+        if (outgoing) {
+            qws_trace_decode_event(fp, type,
+                                    pkt->simple_data, pkt->header.simple_len,
+                                    pkt->raw_data, pkt->header.raw_len);
+        } else {
+            qws_trace_decode_command(fp, type,
+                                      pkt->simple_data, pkt->header.simple_len,
+                                      pkt->raw_data, pkt->header.raw_len);
+        }
+    }
+
+    /* Level 3+: hex dump of all payload data */
+    if (g_trace_level >= QWS_TRACE_HEXDUMP) {
+        if (pkt->header.simple_len > 0 && pkt->simple_data) {
+            fprintf(fp, "    simpleData (%d bytes):\n", pkt->header.simple_len);
+            qws_trace_hexdump(fp, "      ", pkt->simple_data,
+                               (size_t)pkt->header.simple_len);
+        }
+        if (pkt->header.raw_len > 0 && pkt->raw_data) {
+            fprintf(fp, "    rawData (%d bytes):\n", pkt->header.raw_len);
+            qws_trace_hexdump(fp, "      ", pkt->raw_data,
+                               (size_t)pkt->header.raw_len);
+        }
+    }
+
+    fflush(fp);
+}
+
+/* ================================================================
+ * Raw byte trace (for wire-level debugging)
+ * ================================================================ */
+
+void qws_trace_raw_bytes(int32_t client_id, const void *data, size_t len)
+{
+    if (g_trace_level < QWS_TRACE_HEXDUMP || !data || len == 0)
+        return;
+
+    FILE *fp = trace_fp();
+    print_timestamp(fp);
+    fprintf(fp, "=== recv from client %d (%zd bytes) ===\n",
+            client_id, len);
+    qws_trace_hexdump(fp, "  ", data, len);
+    fflush(fp);
+}

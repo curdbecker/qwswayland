@@ -1,0 +1,44 @@
+# Build directories
+build/
+out/
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+install_manifest.txt
+*.cmake
+!toolchain*.cmake
+
+# Compiled binaries and libraries
+*.a
+*.so
+*.so.*
+*.dylib
+*.o
+*.obj
+*.lo
+*.la
+*.pch
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverrideCompatible
+__MACOSX/
+.AppleDB
+.AppleDesktop
+.Spotlight-V100
+.Trashes
+._*
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.clangd/
+compile_commands.json

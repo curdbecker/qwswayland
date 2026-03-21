@@ -1,0 +1,68 @@
+/*
+ * qws_server_helpers.h - Helper functions for building QWS server events
+ * SPDX-License-Identifier: MIT
+ */
+
+#ifndef QWS_SERVER_HELPERS_H
+#define QWS_SERVER_HELPERS_H
+
+#include "qws_proto.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* -----------------------------------------------------------
+ * Construct common server→client event packets
+ * All return a newly allocated packet (caller frees).
+ * ----------------------------------------------------------- */
+
+/* Build a Connected event to send to a newly connected client.
+ * This is the very first thing the QWS server sends.
+ * display_spec: e.g., ":0" (sent as rawData).
+ * server_shm_id: SysV shm id for the shared display memory region.
+ * client_id: unique id assigned to this client. */
+qws_packet_t *qws_make_connected_event(int32_t client_id,
+                                         int32_t server_shm_id,
+                                         const char *display_spec);
+
+/* Build a Creation event (ID range assignment).
+ * object_id: first ID in the range.
+ * count: how many consecutive IDs (object_id .. object_id+count-1). */
+qws_packet_t *qws_make_creation_event(int32_t object_id, int32_t count);
+
+/* Build a Region event: tell client about its allocated window region.
+ * rects: array of qws_rect_t. nrects: count. */
+qws_packet_t *qws_make_region_event(int32_t window, int32_t type,
+                                      const qws_rect_t *rects, int32_t nrects);
+
+/* Build a Mouse event. */
+qws_packet_t *qws_make_mouse_event(int32_t window,
+                                     int32_t x_root, int32_t y_root,
+                                     int32_t state, int32_t delta, int32_t time_ms);
+
+/* Build a Key event. */
+qws_packet_t *qws_make_key_event(int32_t window,
+                                   uint16_t unicode, uint32_t keycode,
+                                   uint32_t modifiers,
+                                   bool is_press, bool auto_repeat);
+
+/* Build a Focus event. */
+qws_packet_t *qws_make_focus_event(int32_t window, int32_t get_focus);
+
+/* Build a MaxWindowRect event. */
+qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1, 
+    int32_t y1, int32_t x2, int32_t y2);
+
+/* Build a PropertyReply event. */
+qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
+                                        const void *data, int32_t len);
+
+size_t qws_convert_to_narrow_unicode(char **dst, const wchar_t *src, size_t srclen);
+size_t qws_convert_to_wide_unicode(wchar_t **dst, const char *src, size_t srclen);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* QWS_SERVER_HELPERS_H */
