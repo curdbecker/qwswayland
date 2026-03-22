@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#include "qwswayland.h"
+#include "lifecycle.h"
+#include "connection.h"
 #include "qws_trace.h"
 
 #include <stdio.h>
@@ -18,7 +19,8 @@ static qwswl_state_t g_state;
 static void signal_handler(int sig)
 {
     (void)sig;
-    g_state.running = false;
+    /* force shutdown */
+    qwswl_shutdown(&g_state);
 }
 
 static void usage(const char *prog)
@@ -158,7 +160,8 @@ int main(int argc, char *argv[])
 
     int ret = qwswl_run(&g_state);
 
-    qwswl_shutdown(&g_state);
+    if (g_state.running)
+        qwswl_shutdown(&g_state);
 
     return ret;
 }

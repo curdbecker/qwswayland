@@ -49,7 +49,11 @@ endforeach()
 
 add_executable(qwswayland
     main.c
-    qwswayland.c
+    connection.c
+    lifecycle.c
+    proxy.c
+    seat.c
+    window.c
     ${GENERATED_PROTOCOL_SOURCES}
 )
 

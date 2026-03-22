@@ -12,12 +12,20 @@
 #define QWS_TRACE_H
 
 #include "qws_proto.h"
+
 #include <stdint.h>
 #include <stdio.h>
+
+#include <assert.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define QWS_TRACE(fmt, ...) \
+    do { \
+        fprintf(stderr, "[trace] %s: " fmt "\n", __func__, ##__VA_ARGS__); \
+    } while (0)
 
 /* -----------------------------------------------------------
  * Verbosity levels
