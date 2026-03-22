@@ -25,7 +25,7 @@ typedef struct qwswl_client {
     int32_t          client_id;
     qws_reader_t     reader;        /* incremental packet parser */
 
-    qwswl_window_t   windows[QWSWL_MAX_WINDOWS];
+    qwswl_window_t   *windows[QWSWL_MAX_WINDOWS];
     int32_t          next_window_id;
 
     /* Per-client lock (3 semaphores: BackingStore, Communication, RegionEvent) */

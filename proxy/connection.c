@@ -49,7 +49,8 @@ void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl)
 
     /* Destroy all windows belonging to this client */
     for (int i = 0; i < QWSWL_MAX_WINDOWS; i++) {
-        qwswl_destroy_window(state, &cl->windows[i]);
+        if (cl->windows[i])
+            qwswl_destroy_window(state, cl->windows[i]);
     }
 
     /* Detach from client's lock (we don't own it, client does) */

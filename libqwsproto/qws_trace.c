@@ -128,7 +128,6 @@ static const char *qt_mouse_button_str(int32_t state)
     return buf[0] ? buf : "0";
 }
 
-
 static void print_surface_flags(FILE *fp, int32_t flags)
 {
     if (flags == 0) { fprintf(fp, "0"); return; }
@@ -142,6 +141,42 @@ static void print_rects(FILE *fp, const qws_rect_t *rects, int nr_rects) {
     for (int i = 0; i < nr_rects; i++) {
         fprintf(fp, "        rect[%d]: (%d,%d) (%d,%d)\n",
         i, rects[i].x1, rects[i].y1, rects[i].x2, rects[i].y2);
+    }
+}
+
+static void print_window_flags(FILE *fp, uint32_t flags)
+{
+    fprintf(fp, "  window_flags: 0x%08x  type=%s%s\n",
+            flags,
+            qws_window_type_str(flags),
+            QWS_IS_TOPLEVEL_TYPE(flags) ? " [toplevel]" : "");
+
+    static const struct { uint32_t bit; const char *name; } hints[] = {
+        { QWS_WF_MSWINDOWS_FIXED_SIZE,   "MSWindowsFixedSizeDialog" },
+        { QWS_WF_MSWINDOWS_OWN_DC,       "MSWindowsOwnDC"           },
+        { QWS_WF_X11_BYPASS_WM,          "X11BypassWindowManager"   },
+        { QWS_WF_FRAMELESS,              "Frameless"                },
+        { QWS_WF_TITLE,                  "WindowTitle"              },
+        { QWS_WF_SYSTEM_MENU,            "WindowSystemMenu"         },
+        { QWS_WF_MINIMIZE_BUTTON,        "WindowMinimizeButton"     },
+        { QWS_WF_MAXIMIZE_BUTTON,        "WindowMaximizeButton"     },
+        { QWS_WF_CONTEXT_HELP_BUTTON,    "WindowContextHelpButton"  },
+        { QWS_WF_SHADE_BUTTON,           "WindowShadeButton"        },
+        { QWS_WF_STAYS_ON_TOP,           "WindowStaysOnTop"         },
+        { QWS_WF_OK_BUTTON,              "WindowOkButton"           },
+        { QWS_WF_CANCEL_BUTTON,          "WindowCancelButton"       },
+        { QWS_WF_CUSTOMIZE,              "CustomizeWindow"          },
+        { QWS_WF_STAYS_ON_BOTTOM,        "WindowStaysOnBottom"      },
+        { QWS_WF_CLOSE_BUTTON,           "WindowCloseButton"        },
+        { QWS_WF_MAC_TOOLBAR_BUTTON,     "MacWindowToolBarButton"   },
+        { QWS_WF_BYPASS_GRAPHICS_PROXY,  "BypassGraphicsProxy"      },
+        { QWS_WF_SOFTKEYS_VISIBLE,       "WindowSoftkeysVisible"    },
+        { QWS_WF_SOFTKEYS_RESPOND,       "WindowSoftkeysRespond"    },
+    };
+
+    for (size_t i = 0; i < sizeof(hints)/sizeof(hints[0]); i++) {
+        if (flags & hints[i].bit)
+            fprintf(fp, "    + %s\n", hints[i].name);
     }
 }
 
@@ -369,6 +404,18 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
         break;
     }
 
+    case QWS_CMD_REPAINT_REGION: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_repaint_region_t)) {
+            const qws_cmd_repaint_region_t *d = simple_data;
+            fprintf(fp, "      window=%d, nrects=%d, opaque=%d\n",
+                    d->window, d->nrectangles, d->opaque);
+            print_window_flags(fp, d->window_flags);
+            if (raw_data && raw_len > 0) 
+                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+        }
+        break;
+    }
+
     case QWS_CMD_REGION_MOVE: {
         if (simple_len >= (int32_t)sizeof(qws_cmd_region_move_t)) {
             const qws_cmd_region_move_t *d = simple_data;
@@ -506,17 +553,6 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
         break;
     }
 
-    case QWS_CMD_REPAINT_REGION: {
-        if (simple_len >= (int32_t)sizeof(qws_cmd_repaint_region_t)) {
-            const qws_cmd_repaint_region_t *d = simple_data;
-            fprintf(fp, "      window=%d, windowflags=%d, nrects=%d, opaque=%d\n",
-                    d->window, d->window_flags, d->nrectangles, d->opaque);
-            if (raw_data && raw_len > 0) 
-                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
-        }
-        break;
-    }
-
     case QWS_CMD_QCOP_REGISTER: {
         fprintf(fp, "      channel (in rawData, %d bytes)\n", raw_len);
         break;
@@ -537,7 +573,7 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
             fprintf(fp, "      type=%s\n",
                     d->type == 0 ? "StartedUsing" : "StoppedUsing");
             if (raw_data && raw_len > 0)
-                fprintf(fp, "      font_name=\"%.*s\"", raw_len, (const char *) raw_data);
+                fprintf(fp, "      font_name=\"%.*s\"\n", raw_len, (const char *) raw_data);
         }
         break;
     }

@@ -505,12 +505,19 @@ int qws_shm_attach_sysv(qws_shm_t *shm, int shm_id)
     memset(shm, 0, sizeof(*shm));
     shm->fd = -1;
     shm->shm_id = shm_id;
+    struct shmid_ds ds;
+    if (shmctl(shm_id, IPC_STAT, &ds) < 0)
+        return -1;
+
     shm->base = shmat(shm_id, NULL, SHM_RDONLY);
     if (shm->base == (void *)-1) {
         shm->base = NULL;
         shm->shm_id = -1;
+        shm->size = -1;
         return -1;
     }
+
+    shm->size = ds.shm_segsz;
     return 0;
 }
 
@@ -658,5 +665,23 @@ const char *qws_image_format_name(int format)
     case QWS_FORMAT_RGB444:                 return "RGB444";
     case QWS_FORMAT_ARGB4444_PREMULTIPLIED: return "ARGB4444_Premultiplied";
     default:                                return "Unknown";
+    }
+}
+
+const char *qws_window_type_str(uint32_t flags)
+{
+    switch (flags & QWS_WINDOW_TYPE_MASK) {
+        case QWS_WT_WIDGET:       return "Widget";
+        case QWS_WT_WINDOW:       return "Window";
+        case QWS_WT_DIALOG:       return "Dialog";
+        case QWS_WT_SHEET:        return "Sheet";
+        case QWS_WT_DRAWER:       return "Drawer";
+        case QWS_WT_POPUP:        return "Popup";
+        case QWS_WT_TOOL:         return "Tool";
+        case QWS_WT_TOOLTIP:      return "ToolTip";
+        case QWS_WT_SPLASHSCREEN: return "SplashScreen";
+        case QWS_WT_DESKTOP:      return "Desktop";
+        case QWS_WT_SUBWINDOW:    return "SubWindow";
+        default:                  return "Unknown";
     }
 }

@@ -163,6 +163,51 @@ enum qws_image_format {
     QWS_FORMAT_NFORMATS                 = 16,  /* sentinel */
 };
 
+/* Qt::WindowType values (from qnamespace.h, Qt 4.8) */
+#define QWS_WINDOW_TYPE_MASK            0x000000ffu
+
+#define QWS_WT_WIDGET                   0x00000000u
+#define QWS_WT_WINDOW                   0x00000001u
+#define QWS_WT_DIALOG                   0x00000003u   /* 0x02 | Window */
+#define QWS_WT_SHEET                    0x00000005u   /* 0x04 | Window */
+#define QWS_WT_DRAWER                   0x00000007u   /* 0x06 | Window */
+#define QWS_WT_POPUP                    0x00000009u   /* 0x08 | Window */
+#define QWS_WT_TOOL                     0x0000000bu   /* 0x0a | Window */
+#define QWS_WT_TOOLTIP                  0x0000000du   /* 0x0c | Window */
+#define QWS_WT_SPLASHSCREEN             0x0000000fu   /* 0x0e | Window */
+#define QWS_WT_DESKTOP                  0x00000011u   /* 0x10 | Window */
+#define QWS_WT_SUBWINDOW                0x00000012u
+
+/* Qt::WindowFlags hint bits */
+#define QWS_WF_MSWINDOWS_FIXED_SIZE     0x00000100u
+#define QWS_WF_MSWINDOWS_OWN_DC        0x00000200u
+#define QWS_WF_X11_BYPASS_WM           0x00000400u
+#define QWS_WF_FRAMELESS               0x00000800u
+#define QWS_WF_TITLE                   0x00001000u
+#define QWS_WF_SYSTEM_MENU             0x00002000u
+#define QWS_WF_MINIMIZE_BUTTON         0x00004000u
+#define QWS_WF_MAXIMIZE_BUTTON         0x00008000u
+#define QWS_WF_CONTEXT_HELP_BUTTON     0x00010000u
+#define QWS_WF_SHADE_BUTTON            0x00020000u
+#define QWS_WF_STAYS_ON_TOP            0x00040000u
+#define QWS_WF_OK_BUTTON               0x00080000u
+#define QWS_WF_CANCEL_BUTTON           0x00100000u
+#define QWS_WF_CUSTOMIZE               0x02000000u
+#define QWS_WF_STAYS_ON_BOTTOM         0x04000000u
+#define QWS_WF_CLOSE_BUTTON            0x08000000u
+#define QWS_WF_MAC_TOOLBAR_BUTTON      0x10000000u
+#define QWS_WF_BYPASS_GRAPHICS_PROXY   0x20000000u
+#define QWS_WF_SOFTKEYS_VISIBLE        0x40000000u
+#define QWS_WF_SOFTKEYS_RESPOND        0x80000000u
+
+/* Helper: is this window type a transient/popup surface? */
+#define QWS_WINDOW_TYPE(flags)          ((flags) & QWS_WINDOW_TYPE_MASK)
+#define QWS_IS_TOPLEVEL_TYPE(flags) \
+    (QWS_WINDOW_TYPE(flags) == QWS_WT_WINDOW || \
+     QWS_WINDOW_TYPE(flags) == QWS_WT_DIALOG || \
+     QWS_WINDOW_TYPE(flags) == QWS_WT_SHEET  || \
+     QWS_WINDOW_TYPE(flags) == QWS_WT_DRAWER)
+
 /* -----------------------------------------------------------
  * QWSWindowSurface flags (QWSWindowSurface::SurfaceFlag, Qt 4.8)
  * Used in qws_cmd_region_surface_data_shm_t::flags (bitmask)
@@ -660,7 +705,9 @@ const char *qws_image_format_name(int format);
 const char *qws_surface_flag_name(int flag);
 const char *qws_im_update_type_name(int type);
 const char *qws_altitude_name(int altitude);
+const char *qws_window_type_str(uint32_t flags);
 bool qws_is_synchronous_commmand(int type);
+
 
 #ifdef __cplusplus
 }

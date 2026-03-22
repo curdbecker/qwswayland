@@ -59,32 +59,23 @@ typedef struct qwswl_window {
     } client_shm;
 
     /* Window properties */
-    char                 name[256];
-    char                 caption[256];
-    int32_t              opacity;       /* 0-255 */
-    bool                 visible;
-    bool                 focused;
-
-    bool                 always_on_top;
+    char                 *name;
+    char                 *caption;
+    
+     bool                 always_on_top;
 } qwswl_window_t;
 
 /* Create a new Wayland-backed QWS window.
  * If win is non-NULL, the existing allocated slot is initialized in place.
  * is_first must be true for the first (toplevel) window of a client. */
-qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
-                                     qwswl_client_t *client, bool is_first);
+qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client, 
+    bool is_toplevel);
 
 /* Destroy a window and release all associated Wayland and shm resources. */
 void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win);
 
-/* Update window geometry and recreate the Wayland buffer to match. */
-void qwswl_update_window_region(qwswl_state_t *state, qwswl_window_t *win,
-                                const qws_rect_t *rects, int32_t nrects,
-                                int32_t width, int32_t height);
-
 /* Set the xdg_toplevel title from the QWS region name/caption. */
-void qwswl_set_window_name(qwswl_state_t *state, qwswl_window_t *win,
-                             const char *name, const char *caption);
+void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);
 
 /* Attach (or reattach) the QWS client's SysV shm as a permanently-mapped
  * read-only buffer on the window. Detaches any previously attached mapping
@@ -92,15 +83,14 @@ void qwswl_set_window_name(qwswl_state_t *state, qwswl_window_t *win,
 void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id,
                               int32_t width, int32_t height);
 
-/* Create a wl_buffer backed by shared memory for a window's surface.
- * Called when the window geometry changes. */
-int  qwswl_create_buffer(qwswl_state_t *state, qwswl_window_t *win,
-                          int32_t width, int32_t height);
-
-/* Copy pixels from QWS client's shared memory into the Wayland buffer
+/* Copy pixels from QWS client's shared memory into the Wayland buffer,
  * and commit the surface. */
-void qwswl_commit_surface(qwswl_state_t *state, qwswl_window_t *win,
+void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
                           const qws_rect_t *rects, int32_t nrects);
+
+/* Update a window's geometry if necessary. */
+void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
+                                const qws_rect_t *rects, int32_t nrects);
 
 /* -----------------------------------------------------------
  * Lookup helpers

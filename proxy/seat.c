@@ -44,19 +44,10 @@ static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
     pointer_data->gx = win->geometry.x + wl_fixed_to_int(sx);
     pointer_data->gy = win->geometry.y + wl_fixed_to_int(sy);
 
-    if (win->parent) {
-        qwswl_window_t *parent = win->parent;
-        /* for child windows in a sub-surface the position is
-         * again given relative to the parent window, so we need
-         * again to compensate when calculating the global offset */
-        pointer_data->gx += parent->geometry.x;
-        pointer_data->gy += parent->geometry.y;
-    }
-
-    QWS_TRACE("qws_win=%d, surface_local=(%d,%d), global=(%d,%d)",
-             win->qws_id,
-             wl_fixed_to_int(sx), wl_fixed_to_int(sy),
-             pointer_data->gx, pointer_data->gy);
+    // QWS_TRACE("qws_win=%d, surface_local=(%d,%d), global=(%d,%d)",
+    //          win->qws_id,
+    //          wl_fixed_to_int(sx), wl_fixed_to_int(sy),
+    //          pointer_data->gx, pointer_data->gy);
 
     // assert(pointer_data->gx >= 0 && pointer_data->gy >= 0);
 
@@ -134,11 +125,6 @@ static void pointer_button(void *data, struct wl_pointer *ptr,
     int32_t qt_button = 0;
 
     assert(pointer_data && win);
-
-    // if (!win->in_use) {
-    //     QWS_TRACE("window is not in use anymore! destroyed?");
-    //     return;
-    // }
 
     /*
      * Map Linux button codes to Qt::MouseButton flags:
@@ -233,7 +219,6 @@ static void keyboard_enter(void *data, struct wl_keyboard *kbd,
         return;
     }
 
-    win->focused = true;
     kbd_data->win = win;
 
     QWS_TRACE("qws_win=%d", win->qws_id);
@@ -272,7 +257,6 @@ static void keyboard_leave(void *data, struct wl_keyboard *kbd,
     qws_write_packet(cl->fd, evt);
     qws_packet_free(evt);
 
-    win->focused = false;
     kbd_data->win = NULL;
 }
 

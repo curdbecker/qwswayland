@@ -51,8 +51,8 @@ static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
 static void xdg_toplevel_close(void *data, struct xdg_toplevel *toplevel)
 {
     (void)toplevel;
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    win->visible = false;
+    // qwswl_window_t *win = (qwswl_window_t *)data;
+    // win->visible = false;
 }
 
 static void xdg_toplevel_configure_bounds(void *data,
@@ -113,23 +113,17 @@ void qwswl_attach_client_shm(qwswl_window_t *win,
     win->client_shm.height = height;
 }
 
-int qwswl_create_buffer(qwswl_state_t *state, qwswl_window_t *win,
+static int qwswl_create_or_update_buffer(qwswl_state_t *state, qwswl_window_t *win,
                           int32_t width, int32_t height)
 {
     int32_t stride = width * 4;  /* ARGB32 = 4 bytes/pixel */
     size_t size = (size_t)(stride * height);
 
-    if (!state->wl_shm || !win->wl_surface)
-        return -1;
-
-    if (win->server_shm.pixels == NULL 
-        && width == win->server_shm.size == size)
-        /* buffer exists and is not meant be changed - nothing to here */
+    if (win->server_shm.pixels != NULL 
+        && win->server_shm.size >= size)
+        /* buffer exists and is not meant be changed - nothing to do here */
         return 0;
-
-    /* Release any existing server-side buffer */
-    release_server_shm(win);
-
+    
     /* Create anonymous file for wl_shm */
     char template[] = "/tmp/qwswl-shm-XXXXXX";
     int fd = mkstemp(template);
@@ -173,135 +167,9 @@ int qwswl_create_buffer(qwswl_state_t *state, qwswl_window_t *win,
     return 0;
 }
 
-void qwswl_commit_surface(qwswl_state_t *state, qwswl_window_t *win,
-                          const qws_rect_t *rects, int32_t nrects)
-{
-    const qws_rect_t default_rect =
-        { 0, 0, win->geometry.width, win->geometry.height };
 
-    if (!win || !win->wl_surface || !win->server_shm.buffer)
-        return;
-
-    const void *src = win->client_shm.shm.base;
-    if (!src)
-        return;
-
-    if (!rects) {
-        assert(nrects == 0);
-        nrects = 1;
-        rects = &default_rect;
-    }
-
-    wl_surface_attach(win->wl_surface, win->server_shm.buffer, 0, 0);
-
-    for (int i = 0; i < nrects; i++) {
-        uint32_t copy_x = rects[i].x1;
-        uint32_t copy_y = rects[i].y1;
-        uint32_t copy_w = rects[i].x2 - rects[i].x1;
-        uint32_t copy_h = rects[i].y2 - rects[i].y1;
-
-        // if (win->parent) {
-        //     qwswl_geometry_t *p_geometry = &win->parent->geometry;
-        //     copy_x -= p_geometry->x;
-        //     copy_y -= p_geometry->y;
-        // }
-
-        uint32_t row_offset = copy_x * 4;
-        uint32_t row_bytes = win->geometry.width * 4;
-
-        /* TODO: format conversion (e.g. RGB16 → ARGB32) when client_shm.format != ARGB32 */
-        for (uint32_t y = 0; y < copy_h; y++) {
-            uint32_t off = row_offset + ((copy_y + y) * row_bytes);
-            memcpy((uint8_t *) win->server_shm.pixels + off,
-                   (const uint8_t *) src + off,
-                   copy_w * 4);
-        }
-
-        wl_surface_damage(win->wl_surface, copy_x, copy_y, copy_w, copy_h);
-    }
-
-    wl_surface_commit(win->wl_surface);
-    // if (win->parent)
-        // wl_surface_commit(win->parent->wl_surface);
-
-    wl_display_flush(state->wl_display);
-}
-
-/* ================================================================
- * Window management
- * ================================================================ */
-
-qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win, 
-    qwswl_client_t *client, bool is_first)
-{
-    int32_t qws_id = ++client->next_window_id;
-    win = &client->windows[qws_id - 1];
-
-    win->client = client;
-    win->server_shm.fd = -1;
-    win->client_shm.shm.shm_id = -1;
-    win->client_shm.shm.fd = -1;
-    win->opacity = 255;
-    win->qws_id = qws_id;
-
-    /* Create Wayland surface */
-    win->wl_surface = wl_compositor_create_surface(state->wl_compositor);
-
-    if (is_first) {
-        /* Toplevel window: wrap in xdg_surface + xdg_toplevel.
-         * Listeners must be added before the initial commit so we don't
-         * miss the configure event that the compositor sends in response. */
-        win->xdg_surface  = xdg_wm_base_get_xdg_surface(state->xdg_wm_base,
-                                                          win->wl_surface);
-        win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
-        xdg_surface_add_listener(win->xdg_surface, &xdg_surface_listener, win);
-        xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener, win);
-    } else {
-        /* Child window: attach as a subsurface of the root toplevel.
-         * No xdg-shell role or configure handshake needed. */
-        win->parent = &client->windows[0];
-        win->wl_subsurface = wl_subcompositor_get_subsurface(
-            state->wl_subcompositor, win->wl_surface, win->parent->wl_surface);
-        // wl_subsurface_set_sync(win->wl_subsurface);
-    }
-
-    wl_surface_set_user_data(win->wl_surface, (void *) win);
-    wl_surface_commit(win->wl_surface);
-
-    fprintf(stderr, "[qwswayland] Created window %d for client %d\n",
-            win->qws_id, client->client_id);
-    return win;
-}
-
-void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
-{
-    if (!win) return;
-
-    fprintf(stderr, "[qwswayland] Destroying window %d\n", win->qws_id);
-
-    release_server_shm(win);
-
-    if (win->xdg_toplevel)
-        xdg_toplevel_destroy(win->xdg_toplevel);
-
-    if (win->xdg_surface)
-        xdg_surface_destroy(win->xdg_surface);
-
-    if (win->wl_surface)
-        wl_surface_destroy(win->wl_surface);
-
-    /* Release the permanently-attached client shm */
-    qws_shm_detach(&win->client_shm.shm);
-
-    memset(win, 0, sizeof(*win));
-    win->server_shm.fd = -1;
-    win->client_shm.shm.shm_id = -1;
-    win->client_shm.shm.fd = -1;
-}
-
-void qwswl_update_window_region(qwswl_state_t *state, qwswl_window_t *win,
-                                const qws_rect_t *rects, int32_t nrects,
-                                int32_t width, int32_t height)
+void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
+                                const qws_rect_t *rects, int32_t nrects)
 {
     if (!win || nrects <= 0 || !rects) return;
 
@@ -315,6 +183,15 @@ void qwswl_update_window_region(qwswl_state_t *state, qwswl_window_t *win,
         if (rects[i].x2 > max_x2) max_x2 = rects[i].x2;
         if (rects[i].y2 > max_y2) max_y2 = rects[i].y2;
     }
+
+    int32_t width = max_x2 - min_x1 + 1;
+    int32_t height = max_y2 - min_y1 + 1;
+
+    if (min_x1 == win->geometry.x && min_y1 == win->geometry.y &&
+            width == win->geometry.width && height == win->geometry.height)
+        return;
+    
+    QWS_TRACE("Updating Window %d geometry", win->qws_id);
 
     win->geometry.x = min_x1;
     win->geometry.y = min_y1;
@@ -331,18 +208,155 @@ void qwswl_update_window_region(qwswl_state_t *state, qwswl_window_t *win,
             win->geometry.x - parent->geometry.x, 
             win->geometry.y - parent->geometry.y);
     }
-
-    /* (Re)create the Wayland buffer to match new size */
-    qwswl_create_buffer(state, win, win->geometry.width, win->geometry.height);
+    
+    /* we need might to need to resize/create the buffer as well */
+    qwswl_create_or_update_buffer(state, win, 
+        win->geometry.width, win->geometry.height);
 }
 
-void qwswl_set_window_name(qwswl_state_t *state, qwswl_window_t *win,
-                             const char *name, const char *caption)
+void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
+                          const qws_rect_t *rects, int32_t nrects)
 {
-    (void)state; (void)caption;
-    if (!name || !win || !win->xdg_toplevel) return;
+    if (!rects || nrects <= 0)
+        return;
 
-    xdg_toplevel_set_title(win->xdg_toplevel, caption);
+    const void *src = win->client_shm.shm.base;
+    if (!src)
+        return;
+
+    for (int i = 0; i < nrects; i++) {
+        int32_t copy_x = rects[i].x1 - win->geometry.x;
+        int32_t copy_y = rects[i].y1 - win->geometry.y;
+        int32_t copy_w = rects[i].x2 - rects[i].x1 + 1;
+        int32_t copy_h = rects[i].y2 - rects[i].y1 + 1;
+
+        /* sanitze bounds */
+        if (copy_x < 0)
+            copy_x = 0;
+
+        if (copy_y < 0)
+            copy_y = 0;
+
+        if (copy_w > win->client_shm.width)
+            copy_w = win->client_shm.width;
+
+        uint32_t row_offset = copy_x * 4;
+        uint32_t row_bytes = win->client_shm.width * 4;
+
+        /* TODO: format conversion (e.g. RGB16 → ARGB32) when client_shm.format != ARGB32 */
+        for (int32_t j = 0; j < copy_h; j++) {
+            uint32_t y = copy_y + j;
+            if (y >= win->client_shm.height)
+                break;
+    
+            uint32_t off = row_offset + (y * row_bytes);
+            memcpy((uint8_t *) win->server_shm.pixels + off,
+                   (const uint8_t *) src + off,
+                   copy_w * 4);
+        }
+
+        wl_surface_damage(win->wl_surface, copy_x, copy_y, copy_w, copy_h);
+    }
+
+    wl_surface_attach(win->wl_surface, win->server_shm.buffer, 
+        0, 0);
+    wl_surface_commit(win->wl_surface);
+
+    wl_display_flush(state->wl_display);
+}
+
+/* ================================================================
+ * Window management
+ * ================================================================ */
+
+qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client, 
+    bool is_toplevel)
+{
+    int32_t qws_id = ++client->next_window_id;
+    assert(qws_id < QWSWL_MAX_WINDOWS);
+
+    qwswl_window_t *win= calloc(1, sizeof(*win));
+    assert(win);
+
+    win->client = client;
+    win->qws_id = qws_id;
+
+    client->windows[qws_id - 1] = win;
+
+    /* Create Wayland surface */
+    win->wl_surface = wl_compositor_create_surface(state->wl_compositor);
+
+    if (is_toplevel) {
+        /* Toplevel window: wrap in xdg_surface + xdg_toplevel.
+         * Listeners must be added before the initial commit so we don't
+         * miss the configure event that the compositor sends in response. */
+        win->xdg_surface  = xdg_wm_base_get_xdg_surface(state->xdg_wm_base,
+                                                          win->wl_surface);
+        win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
+        xdg_surface_add_listener(win->xdg_surface, &xdg_surface_listener, win);
+        xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener, win);
+    } else {
+        /* Child window: attach as a subsurface of the root toplevel.
+         * No xdg-shell role or configure handshake needed. */
+        win->parent = client->windows[0];
+        win->wl_subsurface = wl_subcompositor_get_subsurface(
+            state->wl_subcompositor, win->wl_surface, win->parent->wl_surface);
+    }
+
+    wl_surface_set_user_data(win->wl_surface, (void *) win);
+    wl_surface_commit(win->wl_surface);
+
+    fprintf(stderr, "[qwswayland] Created window %d for client %d\n",
+            win->qws_id, client->client_id);
+    return win;
+}
+
+void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
+{
+    assert(win);
+
+    fprintf(stderr, "[qwswayland] Destroying window %d\n", win->qws_id);
+
+    release_server_shm(win);
+
+    if (win->xdg_toplevel)
+        xdg_toplevel_destroy(win->xdg_toplevel);
+
+    if (win->xdg_surface)
+        xdg_surface_destroy(win->xdg_surface);
+
+    if (win->wl_surface)
+        wl_surface_destroy(win->wl_surface);
+
+    if (win->name)
+        free(win->name);
+
+    if (win->caption)
+        free(win->caption);
+
+    /* Release the permanently-attached client shm */
+    qws_shm_detach(&win->client_shm.shm);
+
+    /* mark the window as unused */
+    win->client->windows[win->qws_id - 1] = NULL;
+
+    free(win);
+}
+
+void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption)
+{
+    assert(win && name && caption);
+
+    if (win->name)
+        free(win->name);
+    win->name = name;
+
+    if (win->caption)
+        free(win->caption);
+    win->caption = caption;
+
+    if (win->xdg_toplevel)
+        xdg_toplevel_set_title(win->xdg_toplevel, caption);
 }
 
 /* -----------------------------------------------------------
@@ -363,7 +377,5 @@ inline qwswl_window_t *
 qwswl_find_window(qwswl_client_t *client, int32_t qws_id)
 {
     assert(qws_id < QWSWL_MAX_WINDOWS);
-    if (qws_id > client->next_window_id)
-        return NULL;
-    return &client->windows[qws_id - 1];
+    return client->windows[qws_id - 1];
 }
