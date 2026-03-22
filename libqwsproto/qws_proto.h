@@ -640,8 +640,15 @@ typedef struct {
  * Returns 0 on success. */
 int qws_shm_create(qws_shm_t *shm, size_t size, qws_ipc_type_t ipc_type);
 
-/* Detach/destroy shared memory. */
+/* Detach/destroy shared memory (also removes SysV segment). */
 void qws_shm_destroy(qws_shm_t *shm);
+
+/* Attach an existing SysV shm segment read-only (does NOT take ownership).
+ * Returns 0 on success. */
+int qws_shm_attach_sysv(qws_shm_t *shm, int shm_id);
+
+/* Detach a previously attached mapping without deleting the segment. */
+void qws_shm_detach(qws_shm_t *shm);
 
 /* -----------------------------------------------------------
  * Utility: type name strings for debugging

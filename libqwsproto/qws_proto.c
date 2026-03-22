@@ -500,6 +500,29 @@ void qws_shm_destroy(qws_shm_t *shm)
     shm->fd = -1;
 }
 
+int qws_shm_attach_sysv(qws_shm_t *shm, int shm_id)
+{
+    memset(shm, 0, sizeof(*shm));
+    shm->fd = -1;
+    shm->shm_id = shm_id;
+    shm->base = shmat(shm_id, NULL, SHM_RDONLY);
+    if (shm->base == (void *)-1) {
+        shm->base = NULL;
+        shm->shm_id = -1;
+        return -1;
+    }
+    return 0;
+}
+
+void qws_shm_detach(qws_shm_t *shm)
+{
+    if (shm->base && shm->shm_id >= 0)
+        shmdt(shm->base);
+    memset(shm, 0, sizeof(*shm));
+    shm->shm_id = -1;
+    shm->fd = -1;
+}
+
 /* ================================================================
  * Debug helpers
  * ================================================================ */

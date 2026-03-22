@@ -1,23 +1,17 @@
 /*
- * qws_lock.h - QWS locking primitives (clean-room)
+ * qws_lock.h - QWS locking primitives
  *
- * Implements two distinct lock types used by Qt 4.8 QWS:
+ * QWSLock: Per-client lock with 3 semaphores used for synchronizing
+ *  client↔server communication. Created by the client; its ID is sent
+ *  to the client which attaches to the same semaphore set.
  *
- * 1. QWSLock: Per-client lock with 3 semaphores used for synchronizing
- *    client↔server communication. Created by the server; its ID is sent
- *    to the client which attaches to the same semaphore set.
+ *  Semaphore indices:
+ *    [0] BackingStore    - guards shared pixel buffer access
+ *    [1] Communication   - guards command/event socket exchanges
+ *    [2] RegionEvent     - signals pending region events to client
  *
- *    Semaphore indices (initial values):
- *      [0] BackingStore   (1) - guards shared pixel buffer access
- *      [1] Communication  (1) - guards command/event socket exchanges
- *      [2] RegionEvent    (0) - signals pending region events to client
- *
- * 2. QLock: Display-level read/write lock protecting the framebuffer
- *    and shared display memory. Uses a counting semaphore: multiple
- *    readers allowed, writers get exclusive access.
- *
- * Both have SysV IPC and POSIX IPC backends, selectable at creation time,
- * since we (the server) don't know which the client was compiled to use.
+ * We provide SysV IPC and POSIX IPC backends, selectable at creation time,
+ * since the server doesn't know which the client was compiled to use.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -99,80 +93,6 @@ int  qws_lock_get_value(const qws_lock_t *lock, int which);
 /* Check if we hold a lock (based on lock_count). Only valid for
  * BackingStore and Communication. */
 bool qws_lock_has_lock(const qws_lock_t *lock, int which);
-
-/* ================================================================
- * QLock: display read/write lock
- * ================================================================
- *
- * This protects the shared framebuffer / display memory region.
- *
- * SysV backend:
- *   Single counting semaphore initialized to MAX_LOCKS (200).
- *   Read lock:  sem_op = -1
- *   Write lock: sem_op = -MAX_LOCKS (exclusive)
- *   Keyed by ftok(socket_path, id_char).
- *
- * POSIX backend (QT_POSIX_IPC):
- *   Three named semaphores, named <socket_path><id_char>{c,r,w}:
- *     'c' = counter (init MAX_LOCKS) — read permit counter
- *     'r' = rsem    (init 1)         — read-mode lock
- *     'w' = wsem    (init 1)         — write-mode lock
- *   The lock/unlock protocol uses a combination of these three
- *   to implement reader-writer semantics.
- *
- * File-locking backend (QT_NO_SEMAPHORE, e.g. macOS):
- *   Uses flock() on a file named <socket_path><id_char>.
- *   Not implemented here since our target is embedded Linux.
- */
-
-#define QWS_DISPLAY_LOCK_MAX 200  /* MAX_LOCKS in Qt 4.8 QLock */
-
-typedef enum {
-    QWS_DLOCK_READ,
-    QWS_DLOCK_WRITE,
-} qws_dlock_mode_t;
-
-typedef struct {
-    qws_ipc_type_t  ipc_type;
-    bool             owned;
-    qws_dlock_mode_t last_mode;  /* mode used for current lock (for unlock) */
-
-    /* SysV backend */
-    int              sysv_semid;
-
-    /* POSIX backend — three named semaphores matching Qt 4.8 */
-    sem_t           *posix_counter;    /* 'c': resource counter, init=MAX_LOCKS */
-    sem_t           *posix_rsem;       /* 'r': read mode lock, init=1 */
-    sem_t           *posix_wsem;       /* 'w': write mode lock, init=1 */
-    char             posix_base[128];  /* base path for sem names */
-
-    /* Nesting */
-    int              count;       /* number of times locked by this process */
-} qws_display_lock_t;
-
-/* Create or open the display lock.
- * For SysV: socket_path + id_char are used with ftok().
- * For POSIX: id_char is used to form the named semaphore path.
- * If create=true, the semaphore is created (server side).
- * Returns 0 on success. */
-int  qws_display_lock_create(qws_display_lock_t *lock, qws_ipc_type_t type,
-                               const char *socket_path, char id_char,
-                               bool create);
-
-/* Destroy / detach. */
-void qws_display_lock_destroy(qws_display_lock_t *lock);
-
-/* Acquire the lock in the given mode. Blocks if necessary. */
-int  qws_display_lock_lock(qws_display_lock_t *lock, qws_dlock_mode_t mode);
-
-/* Release the lock. Must match the mode used in lock(). */
-int  qws_display_lock_unlock(qws_display_lock_t *lock, qws_dlock_mode_t mode);
-
-/* Check if currently locked by this process. */
-bool qws_display_lock_is_locked(const qws_display_lock_t *lock);
-
-/* Check if the lock is valid (successfully created/opened). */
-bool qws_display_lock_is_valid(const qws_display_lock_t *lock);
 
 #ifdef __cplusplus
 }

@@ -32,7 +32,7 @@ extern "C" {
 
 #define QWSWL_MAX_CLIENTS    32
 #define QWSWL_MAX_WINDOWS    256
-#define QWSWL_SHM_SIZE       (4 * 1024 * 1024)  /* 4 MB initial shm */
+#define QWSWL_SHM_SIZE       1024
 
 /* -----------------------------------------------------------
  * Per-client state: one per connected QWS application
@@ -73,13 +73,22 @@ typedef struct qwswl_window {
     /* Geometry as known by the QWS client */
     qwswl_geometry_t     geometry;
 
-    /* Surface pixel buffer */
-    struct wl_buffer    *wl_buffer;
-    void                *shm_pixels;    /* mmap'd pixel data */
-    int                  shm_fd;
-    size_t               shm_size;
-    int32_t              pixel_format;  /* wl_shm_format */
-    int32_t              client_shm_id;   /* SysV shm id of the QWS client's pixel buffer */
+    /* Wayland-side pixel buffer: anonymous mmap fd + wl_buffer */
+    struct {
+        struct wl_buffer *buffer;
+        void             *pixels;       /* mmap of the anonymous fd */
+        int               fd;
+        size_t            size;
+        int32_t           format;       /* wl_shm_format */
+    } server_shm;
+
+    /* QWS client pixel buffer (SysV shm, permanently attached, not owned) */
+    struct {
+        qws_shm_t shm;                  /* shm_id, base (pixels) */
+        int32_t   format;               /* QWS pixel format from the client */
+        int32_t   width;                /* buffer dimensions as reported by the client */
+        int32_t   height;
+    } client_shm;
 
     /* Window properties */
     char                 name[256];
@@ -115,7 +124,7 @@ typedef struct qwswl_state {
     qws_shm_t            display_shm;
 
     /* Display-level R/W lock (protects display_shm) */
-    qws_display_lock_t   display_lock;
+    qws_lock_t           display_lock;
 
     /* IPC backend: QWS_IPC_SYSV or QWS_IPC_POSIX */
     qws_ipc_type_t       ipc_type;
@@ -197,6 +206,12 @@ void qwswl_focus_window(qwswl_state_t *state, qwswl_window_t *win);
 /* -----------------------------------------------------------
  * Pixel buffer management
  * ----------------------------------------------------------- */
+
+/* Attach (or reattach) the QWS client's SysV shm as a permanently-mapped
+ * read-only buffer on the window.  Detaches any previously attached mapping
+ * when the shm_id changes. */
+void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id,
+                              int32_t width, int32_t height);
 
 /* Create a wl_buffer backed by shared memory for a window's surface.
  * Called when the window geometry changes. */

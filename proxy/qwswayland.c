@@ -25,6 +25,8 @@
 
 
 static qwswl_window_t *qwswl_find_in_use_window(qwswl_state_t *state, int32_t qws_id);
+static void release_server_shm(qwswl_window_t *win);
+
 
 /* -----------------------------------------------------------
  * Trace helpers: macro for Wayland-side event logging
@@ -598,7 +600,9 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
     for (int i = 0; i < QWSWL_MAX_WINDOWS; i++) {
         state->windows[i].in_use = false;
         state->windows[i].allocated = false;
-        state->windows[i].shm_fd = -1;
+        state->windows[i].server_shm.fd = -1;
+        state->windows[i].client_shm.shm.shm_id = -1;
+        state->windows[i].client_shm.shm.fd = -1;
     }
 
     state->xkb_context = xkb_context_new(0);
@@ -687,16 +691,14 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
     fprintf(stderr, "[qwswayland] QWS server listening on %s\n",
             state->socket_path);
 
-    /* ---- Create shared memory region for display props ---- */
+    /* Create a shared memory region from the server-side to share display information
+     * with the client. This looks to be a legacy way from earlier Qt Versions to share
+     * information between client and server. By now, the only real use that is left
+     * is apparently the sharing of override cursors - which we likely won't do.
+     * However, the client refuses to start without it, so we unfortunately need 
+     * to create it.*/
     if (qws_shm_create(&state->display_shm, QWSWL_SHM_SIZE, state->ipc_type) != 0) {
         fprintf(stderr, "[qwswayland] Failed to create display shm\n");
-        return -1;
-    }
-
-    /* ---- Create display lock ---- */
-    if (qws_display_lock_create(&state->display_lock, state->ipc_type,
-                                  state->socket_path, 'd', true) != 0) {
-        fprintf(stderr, "[qwswayland] Failed to not create display lock\n");
         return -1;
     }
 
@@ -940,7 +942,8 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
                 cmd->surfacedatalength >= (int32_t)sizeof(qws_cmd_region_surface_data_shm_t)) {
             const qws_cmd_region_surface_data_shm_t *sd =
                 (const qws_cmd_region_surface_data_shm_t *)surface_data;
-            win->client_shm_id = sd->mem_id;
+            if (sd->mem_id >= 0)
+                qwswl_attach_client_shm(win, sd->mem_id, sd->width, sd->height);
             height = sd->height;
             width = sd->width;
         }
@@ -950,7 +953,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             /* In QWS, the server allocates the region back to the client.
              * For our proxy, we grant the full requested region and also
              * use it to size the Wayland surface. */
-            qwswl_update_window_region(state, win, rects, 
+            qwswl_update_window_region(state, win, rects,
                 nrects, width, height);
             qwswl_commit_surface(state, win, NULL, 0);
         } else {
@@ -1287,7 +1290,9 @@ qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
     assert(!win->in_use && (win->allocated || is_first));
 
     win->client = client;
-    win->shm_fd = -1;
+    win->server_shm.fd = -1;
+    win->client_shm.shm.shm_id = -1;
+    win->client_shm.shm.fd = -1;
     win->opacity = 255;
     win->in_use = true;
 
@@ -1320,33 +1325,30 @@ qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
     return win;
 }
 
+
 void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
 {
     if (!win || !win->in_use) return;
 
     fprintf(stderr, "[qwswayland] Destroying window %d\n", win->qws_id);
 
-    /* Destroy Wayland objects */
-    if (win->wl_buffer)
-        wl_buffer_destroy(win->wl_buffer);
-    if (win->xdg_toplevel) {
+    release_server_shm(win);
+
+    if (win->xdg_toplevel)
         xdg_toplevel_destroy(win->xdg_toplevel);
-    }
-    if (win->xdg_surface) {
+
+    if (win->xdg_surface)
         xdg_surface_destroy(win->xdg_surface);
-    }
     if (win->wl_surface)
         wl_surface_destroy(win->wl_surface);
 
-    /* Clean up shm */
-    if (win->shm_pixels && win->shm_size > 0) {
-        munmap(win->shm_pixels, win->shm_size);
-    }
-    if (win->shm_fd >= 0)
-        close(win->shm_fd);
+    /* Release the permanently-attached client shm */
+    qws_shm_detach(&win->client_shm.shm);
 
     memset(win, 0, sizeof(*win));
-    win->shm_fd = -1;
+    win->server_shm.fd = -1;
+    win->client_shm.shm.shm_id = -1;
+    win->client_shm.shm.fd = -1;
     win->in_use = false;
 }
 
@@ -1408,25 +1410,41 @@ void qwswl_focus_window(qwswl_state_t *state, qwswl_window_t *win)
  * Pixel buffer management
  * ================================================================ */
 
+static void release_server_shm(qwswl_window_t *win)
+{
+    if (win->server_shm.buffer) {
+        wl_buffer_destroy(win->server_shm.buffer);
+        win->server_shm.buffer = NULL;
+    }
+    if (win->server_shm.pixels && win->server_shm.size > 0) {
+        munmap(win->server_shm.pixels, win->server_shm.size);
+        win->server_shm.pixels = NULL;
+    }
+    if (win->server_shm.fd >= 0) {
+        close(win->server_shm.fd);
+        win->server_shm.fd = -1;
+    }
+}
+
+void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id,
+                              int32_t width, int32_t height)
+{
+    if (win->client_shm.shm.shm_id != shm_id && shm_id != -1) {
+        qws_shm_detach(&win->client_shm.shm);
+        assert(qws_shm_attach_sysv(&win->client_shm.shm, shm_id) == 0);
+    }
+    win->client_shm.width  = width;
+    win->client_shm.height = height;
+}
+
 int qwswl_create_buffer(qwswl_state_t *state, qwswl_window_t *win,
                           int32_t width, int32_t height)
 {
     if (!state->wl_shm || !win->wl_surface)
         return -1;
 
-    /* Destroy old buffer if any */
-    if (win->wl_buffer) {
-        wl_buffer_destroy(win->wl_buffer);
-        win->wl_buffer = NULL;
-    }
-    if (win->shm_pixels && win->shm_size > 0) {
-        munmap(win->shm_pixels, win->shm_size);
-        win->shm_pixels = NULL;
-    }
-    if (win->shm_fd >= 0) {
-        close(win->shm_fd);
-        win->shm_fd = -1;
-    }
+    /* Release any existing server-side buffer */
+    release_server_shm(win);
 
     int32_t stride = width * 4;  /* ARGB32 = 4 bytes/pixel */
     size_t size = (size_t)(stride * height);
@@ -1466,10 +1484,10 @@ int qwswl_create_buffer(qwswl_state_t *state, qwswl_window_t *win,
         return -1;
     }
 
-    win->wl_buffer = buffer;
-    win->shm_pixels = pixels;
-    win->shm_fd = fd;
-    win->shm_size = size;
+    win->server_shm.buffer = buffer;
+    win->server_shm.pixels = pixels;
+    win->server_shm.fd     = fd;
+    win->server_shm.size   = size;
 
     return 0;
 }
@@ -1477,11 +1495,14 @@ int qwswl_create_buffer(qwswl_state_t *state, qwswl_window_t *win,
 void qwswl_commit_surface(qwswl_state_t *state, qwswl_window_t *win,
                           const qws_rect_t *rects, int32_t nrects)
 {
-    const qws_rect_t default_rect = 
+    const qws_rect_t default_rect =
         {0, 0, win->geometry.width, win->geometry.height };
-    void *src;
 
-    if (!win || !win->wl_surface || !win->wl_buffer)
+    if (!win || !win->wl_surface || !win->server_shm.buffer)
+        return;
+
+    const void *src = win->client_shm.shm.base;
+    if (!src)
         return;
 
     if (!rects) {
@@ -1490,20 +1511,14 @@ void qwswl_commit_surface(qwswl_state_t *state, qwswl_window_t *win,
         rects = &default_rect;
     }
 
-    src = shmat(win->client_shm_id, NULL, SHM_RDONLY);
-    if (src == (void *)-1) {
-        WL_TRACE("failed to allocate shared memory - window already ready?");
-        return;
-    }
-
-    wl_surface_attach(win->wl_surface, win->wl_buffer, 0, 0);
+    wl_surface_attach(win->wl_surface, win->server_shm.buffer, 0, 0);
 
     for (int i = 0; i < nrects; i++) {
         uint32_t copy_x = rects[i].x1;
         uint32_t copy_y = rects[i].y1;
         uint32_t copy_w = rects[i].x2 - rects[i].x1;
         uint32_t copy_h = rects[i].y2 - rects[i].y1;
-        
+
         // if (win->parent) {
         //     qwswl_geometry_t *p_geometry = &win->parent->geometry;
         //     copy_x -= p_geometry->x;
@@ -1513,17 +1528,16 @@ void qwswl_commit_surface(qwswl_state_t *state, qwswl_window_t *win,
         uint32_t row_offset = copy_x * 4;
         uint32_t row_bytes = win->geometry.width * 4;
 
-        /* TODO: format conversion (e.g. RGB16 → ARGB32) when client_format != ARGB32 */
+        /* TODO: format conversion (e.g. RGB16 → ARGB32) when client_shm.format != ARGB32 */
         for (uint32_t y = 0; y < copy_h; y++) {
             uint32_t off = row_offset + ((copy_y + y) * row_bytes);
-            memcpy((uint8_t *) win->shm_pixels + off,
+            memcpy((uint8_t *) win->server_shm.pixels + off,
                    (const uint8_t *) src + off,
                    copy_w * 4);
         }
 
         wl_surface_damage(win->wl_surface, copy_x, copy_y, copy_w, copy_h);
     }
-    shmdt(src);
 
     wl_surface_commit(win->wl_surface);
     // if (win->parent)
@@ -1659,7 +1673,6 @@ void qwswl_shutdown(qwswl_state_t *state)
     }
 
     qws_shm_destroy(&state->display_shm);
-    qws_display_lock_destroy(&state->display_lock);
 
     if (state->epoll_fd >= 0)
         close(state->epoll_fd);
