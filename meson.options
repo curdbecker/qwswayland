@@ -1,0 +1,2 @@
+option('build_proxy', type: 'boolean', value: true,
+  description: 'Build the qwswayland proxy executable')

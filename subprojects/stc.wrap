@@ -1,0 +1,9 @@
+[wrap-git]
+directory = STC
+url = https://github.com/stclib/STC.git
+revision = a9cafc53010d8ec8a4e3b3579c3cb663a8a3ddd1
+depth = 1
+
+[provide]
+dependency_names = stc
+program_names = checkscoped

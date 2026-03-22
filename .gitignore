@@ -1,16 +1,15 @@
 # Build directories
 build/
 out/
+builddir/
+subprojects/*
+!subprojects/*.wrap
 
-# CMake
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-CTestTestfile.cmake
-Makefile
-install_manifest.txt
-*.cmake
-!toolchain*.cmake
+# Meson
+meson-logs/
+meson-private/
+meson-info/
+.mesonpy/
 
 # Compiled binaries and libraries
 *.a

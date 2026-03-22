@@ -48,9 +48,7 @@ The QWSWayland proxy daemon. Listens for QWS client connections and:
 ## Building
 
 ```bash
-mkdir build && cd build
-cmake ..
-make
+mkdir builddir && meson setup builddir && meson compile -C builddir
 ```
 
 **Dependencies:** `libwayland-client`, `libxkbcommon`, `wayland-protocols`,
