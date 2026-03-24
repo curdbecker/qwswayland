@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef CONNECTION_H
-#define CONNECTION_H
+#ifndef CLIENT_H
+#define CLIENT_H
 
 #include "lifecycle.h"
 #include "window.h"
@@ -45,4 +45,4 @@ void qwswl_remove_window_from_client(qwswl_client_t *client, int32_t qws_id);
 }
 #endif
 
-#endif /* CONNECTION_H */
+#endif /* CLIENT_H */
