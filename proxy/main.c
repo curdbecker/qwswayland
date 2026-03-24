@@ -4,7 +4,7 @@
  */
 
 #include "lifecycle.h"
-#include "connection.h"
+#include "client.h"
 #include "qws_trace.h"
 
 #include <stdio.h>
@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <signal.h>
 #include <getopt.h>
+#include <unistd.h>
 
 static qwswl_state_t g_state;
 
@@ -20,7 +21,8 @@ static void signal_handler(int sig)
 {
     (void)sig;
     /* force shutdown */
-    qwswl_shutdown(&g_state);
+    if (g_state.loop_epoll_fd >= 0)
+        close(g_state.loop_epoll_fd);
 }
 
 static void usage(const char *prog)

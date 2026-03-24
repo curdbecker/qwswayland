@@ -6,7 +6,7 @@
 
 #include "window.h"
 #include "lifecycle.h"
-#include "connection.h"
+#include "client.h"
 #include "qws_server_helpers.h"
 #include "qws_trace.h"
 
@@ -43,7 +43,6 @@ static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
                                     struct wl_array *states)
 {
     (void)toplevel; (void)states;
-    qwswl_window_t *win = (qwswl_window_t *)data;
     /* width/height of 0 means "compositor defers to the client" */
     assert (width == 0 && height == 0);
 }
@@ -102,8 +101,7 @@ static void release_server_shm(qwswl_window_t *win)
 }
 
 void qwswl_attach_client_shm(qwswl_window_t *win,
-     int shm_id,
-                              int32_t width, int32_t height)
+     int shm_id, int32_t width, int32_t height)
 {
     if (win->client_shm.shm.shm_id != shm_id && shm_id != -1) {
         qws_shm_detach(&win->client_shm.shm);
@@ -111,6 +109,17 @@ void qwswl_attach_client_shm(qwswl_window_t *win,
     }
     win->client_shm.width  = width;
     win->client_shm.height = height;
+}
+
+void qwswl_detach_client_shm(qwswl_window_t *win)
+{
+    assert(win->client_shm.shm.shm_id != -1);
+
+    qws_shm_detach(&win->client_shm.shm);
+
+    win->client_shm.format = -1;
+    win->client_shm.width  = -1;
+    win->client_shm.height = -1;
 }
 
 static int qwswl_create_or_update_buffer(qwswl_state_t *state, qwswl_window_t *win,
@@ -167,7 +176,6 @@ static int qwswl_create_or_update_buffer(qwswl_state_t *state, qwswl_window_t *w
     return 0;
 }
 
-
 void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
                                 const qws_rect_t *rects, int32_t nrects)
 {
@@ -207,6 +215,10 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
         wl_subsurface_set_position(win->wl_subsurface, 
             win->geometry.x - parent->geometry.x, 
             win->geometry.y - parent->geometry.y);
+
+        /* Avoids weird flickering or missing updates when subsurfaces 
+         * are not updated together with the parent surface. */
+        wl_subsurface_set_desync(win->wl_subsurface);
     }
     
     /* we need might to need to resize/create the buffer as well */
@@ -223,6 +235,8 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
     const void *src = win->client_shm.shm.base;
     if (!src)
         return;
+
+    assert(win->client_shm.shm.size == win->server_shm.size);
 
     for (int i = 0; i < nrects; i++) {
         int32_t copy_x = rects[i].x1 - win->geometry.x;
@@ -273,7 +287,6 @@ qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client
     bool is_toplevel)
 {
     int32_t qws_id = ++client->next_window_id;
-    assert(qws_id < QWSWL_MAX_WINDOWS);
 
     qwswl_window_t *win= calloc(1, sizeof(*win));
     assert(win);
@@ -281,7 +294,7 @@ qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client
     win->client = client;
     win->qws_id = qws_id;
 
-    client->windows[qws_id - 1] = win;
+    qwswl_add_window_to_client(client, qws_id, win);
 
     /* Create Wayland surface */
     win->wl_surface = wl_compositor_create_surface(state->wl_compositor);
@@ -298,7 +311,7 @@ qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client
     } else {
         /* Child window: attach as a subsurface of the root toplevel.
          * No xdg-shell role or configure handshake needed. */
-        win->parent = client->windows[0];
+        win->parent = qwswl_lookup_window_on_client(client, 1);
         win->wl_subsurface = wl_subcompositor_get_subsurface(
             state->wl_subcompositor, win->wl_surface, win->parent->wl_surface);
     }
@@ -327,6 +340,10 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
 
     if (win->wl_surface)
         wl_surface_destroy(win->wl_surface);
+    
+    /* make sure that the compositor processes all events
+     * regarding this window, so that we won't receive any stray events anymore */
+    wl_display_roundtrip(state->wl_display);
 
     if (win->name)
         free(win->name);
@@ -338,7 +355,7 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
     qws_shm_detach(&win->client_shm.shm);
 
     /* mark the window as unused */
-    win->client->windows[win->qws_id - 1] = NULL;
+    qwswl_remove_window_from_client(win->client, win->qws_id);
 
     free(win);
 }
@@ -371,11 +388,4 @@ qwswl_surface_to_win(struct wl_surface *surface)
         return NULL;
     qwswl_window_t *win = (qwswl_window_t *)wl_surface_get_user_data(surface);
     return win;
-}
-
-inline qwswl_window_t *
-qwswl_find_window(qwswl_client_t *client, int32_t qws_id)
-{
-    assert(qws_id < QWSWL_MAX_WINDOWS);
-    return client->windows[qws_id - 1];
 }

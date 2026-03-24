@@ -5,6 +5,8 @@
  */
 
 #include "lifecycle.h"
+#include "client.h"
+#include "proxy.h"
 #include "seat.h"
 #include "qws_trace.h"
 
@@ -16,6 +18,10 @@
 #include <sys/epoll.h>
 
 #include "xdg-output-unstable-v1-client-protocol.h"
+
+#define T qwswl_client_map_t, int32_t, qwswl_client_t*
+#define i_declared
+#include "stc/hashmap.h"
 
 extern const struct wl_seat_listener seat_listener;
 
@@ -155,11 +161,13 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
     memset(state, 0, sizeof(*state));
     state->ipc_type = ipc_type;
     state->qws_server_fd = -1;
-    state->epoll_fd = -1;
+    state->qws_epoll_fd = -1;
     state->screen_width = width;
     state->screen_height = height;
     state->screen_depth = depth;
     state->running = true;
+
+    qwswl_client_map_t_init();
 
     state->xkb_context = xkb_context_new(0);
     if (!state->xkb_context) {
@@ -259,9 +267,15 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
     }
 
     /* ---- Set up epoll ---- */
-    state->epoll_fd = epoll_create1(0);
-    if (state->epoll_fd < 0) {
-        perror("[qwswayland] epoll_create1");
+    state->qws_epoll_fd = epoll_create1(0);
+    if (state->qws_epoll_fd < 0) {
+        perror("[qwswayland] epoll_create1 qws_epoll_fd");
+        return -1;
+    }
+
+    state->loop_epoll_fd = epoll_create1(0);
+    if (state->loop_epoll_fd < 0) {
+        perror("[qwswayland] epoll_create1 loop_epoll_fd");
         return -1;
     }
 
@@ -272,6 +286,11 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
 /* ================================================================
  * Shutdown
  * ================================================================ */
+
+/* disconnects the client without updating the hashmap, so it is safe 
+ * to iterate through it while disconnecting clients */
+static void qwswl_disconnect_client_no_hashmap(qwswl_state_t *state, 
+    qwswl_client_t *cl);
 
 void qwswl_shutdown(qwswl_state_t *state)
 {
@@ -315,12 +334,10 @@ void qwswl_shutdown(qwswl_state_t *state)
         wl_display_disconnect(state->wl_display);
     }
 
-    // /* Disconnect all clients */
-    // for (int i = 0; i < QWSWL_MAX_CLIENTS; i++) {
-    //     qwswl_client_t *cl = &state->clients[i];
-    //     if (cl->in_use)
-    //         qwswl_disconnect_client(state, cl);
-    // }
+    /* Disconnect all clients */
+    for(c_each_kv(client_id, cl, qwswl_client_map_t, state->client_map)) {
+        qwswl_disconnect_client_no_hashmap(state, *cl);
+    }
 
     /* Clean up QWS */
     if (state->qws_server_fd >= 0) {
@@ -330,9 +347,169 @@ void qwswl_shutdown(qwswl_state_t *state)
 
     qws_shm_destroy(&state->display_shm);
 
-    if (state->epoll_fd >= 0)
-        close(state->epoll_fd);
+    if (state->qws_epoll_fd >= 0)
+        close(state->qws_epoll_fd);
+    
+    if (state->loop_epoll_fd >= 0)
+        close(state->loop_epoll_fd);
 
     state->running = false;
 }
 
+/* ================================================================
+ * Main event loop and helpers
+ * ================================================================ */
+
+static qwswl_client_t *qwswl_accept_client(qwswl_state_t *state)
+{
+    static int32_t next_client_id = 1;
+    int fd = qws_server_accept(state->qws_server_fd);
+    if (fd < 0)
+        return NULL;
+
+    qwswl_client_t *cl = qwswl_create_client(fd, next_client_id);
+    assert(cl);
+
+    /* Add to epoll */
+    struct epoll_event ev = { .events = EPOLLIN,
+                               .data.ptr = (void *)cl };
+    epoll_ctl(state->qws_epoll_fd, EPOLL_CTL_ADD, fd, &ev);
+
+    qwswl_client_map_t_result res = 
+        qwswl_client_map_t_insert(&state->client_map, next_client_id, cl);
+    assert(res.inserted);
+
+    next_client_id++;
+
+    fprintf(stderr, "[qwswayland] Client connected (fd=%d)\n", fd);
+    return cl;
+}
+
+static void qwswl_disconnect_client_no_hashmap(qwswl_state_t *state, qwswl_client_t *cl)
+{
+    epoll_ctl(state->qws_epoll_fd, EPOLL_CTL_DEL, cl->fd, NULL);
+
+    qwswl_destroy_client(state, cl);
+}
+
+void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl) {
+    fprintf(stderr, "[qwswayland] Client %d disconnected\n",
+        cl->client_id);
+    
+    qwswl_disconnect_client_no_hashmap(state, cl);
+
+    assert(qwswl_client_map_t_erase(&state->client_map, cl->client_id));
+}
+
+int qwswl_run(qwswl_state_t *state)
+{
+    struct epoll_event loop_events[3];
+    struct epoll_event qws_events[32];
+    int wl_fd;
+    
+    wl_fd = wl_display_get_fd(state->wl_display);
+    if (wl_fd < 0) {
+        perror("[qwswayland] wl_display_get_fd");
+        return 1;
+    }
+        
+    /* Watch QWS server socket for new connections */
+    {
+        struct epoll_event ev = { .events = EPOLLIN,
+                                   .data.fd = state->qws_server_fd};
+        epoll_ctl(state->loop_epoll_fd, EPOLL_CTL_ADD, 
+            state->qws_server_fd, &ev);
+    }
+
+    /* Watch Wayland display fd for events */
+    {
+        struct epoll_event ev = { .events = EPOLLIN,
+                                   .data.fd = wl_fd};
+        epoll_ctl(state->loop_epoll_fd, EPOLL_CTL_ADD, wl_fd, &ev);
+    }
+
+    /* Watch qws client epoll fd for events */ {
+        struct epoll_event ev = { .events = EPOLLIN,
+                                   .data.fd = state->qws_epoll_fd};
+        epoll_ctl(state->loop_epoll_fd, EPOLL_CTL_ADD, 
+            state->qws_epoll_fd, &ev);
+    }
+
+    fprintf(stderr, "[qwswayland] Entering main loop\n");
+
+    /* We're using two separate epoll fds in order to comply with wayland's
+     * suggested event handling procedure while still being able
+     * to use wl_display_roundtrip in our own event handling code to simplify
+     * pointer/key events without having to resort to stray pointers (maybe?).
+     * 
+     * The main issue is that wl_display_roundtrip would block if the thread
+     * is preparing to read, since the queue is then actually locked for
+     * reading, so we would be essentially creating a deadlock. However, this
+     * still would be very convenient e.g. when handling window/surface desctruction.
+     * 
+     * Therefore, we're handling first reading from the wayland event queue
+     * to fetch all pending events or we are cancelling the read if there are 
+     * no events to process. Afterwards, we're separately processing all events
+     * that happened on the qws client sockets. 
+     * 
+     * The neat thing here is that an epoll fd is actually epoll-able itself, 
+     * so we do not have to poll separately on the chance the are QWS events, 
+     * but only if we are know that there must be events from our first epoll.
+     * */
+
+    while (true) {
+        /* Flush Wayland before blocking */
+        while (wl_display_prepare_read(state->wl_display) != 0)
+            wl_display_dispatch_pending(state->wl_display);
+        wl_display_flush(state->wl_display);
+
+        bool had_wayland = false;
+        bool had_qws = false;
+
+        {
+            int nfds = epoll_wait(state->loop_epoll_fd, loop_events, 3, 100);
+            if (nfds < 0 && errno != EINTR) {
+                if (errno == EBADFD)
+                    /* we're being shut down */
+                    return 0;
+
+                perror("[qwswayland] epoll_wait loop_epoll_fd");
+                return 1;
+            }
+
+            for (int i = 0; i < nfds; i++) {
+                if (loop_events[i].data.fd == state->qws_server_fd) {
+                    /* New QWS client connection */
+                    assert(qwswl_accept_client(state));
+                } else if (loop_events[i].data.fd == wl_fd) {
+                    /* Wayland events */
+                    had_wayland = true;
+                } else if (loop_events[i].data.fd == state->qws_epoll_fd) {
+                    /* QWS events */
+                    had_qws = true;
+                }
+            }
+        }
+
+        if (had_wayland) {
+            wl_display_read_events(state->wl_display);
+        } else {
+            wl_display_cancel_read(state->wl_display);
+        }
+
+        if (had_qws) {
+            int nfds = epoll_wait(state->qws_epoll_fd, qws_events, 32, 100);
+            if (nfds < 0) {
+                perror("[qwswayland] epoll_wait ");
+                return 1;
+            }
+
+            for (int i = 0; i < nfds; i++) {
+                qwswl_handle_client_data(state, 
+                    (qwswl_client_t *) qws_events[i].data.ptr);
+            }
+        }
+    }
+
+    return 0;
+}

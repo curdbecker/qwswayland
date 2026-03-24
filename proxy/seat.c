@@ -6,7 +6,7 @@
 #include "seat.h"
 #include "window.h"
 #include "lifecycle.h"
-#include "connection.h"
+#include "client.h"
 #include "qws_server_helpers.h"
 #include "qws_trace.h"
 
@@ -34,11 +34,6 @@ static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
     assert(pointer_data && win);
 
     qwswl_client_t *cl = win->client;
-
-    // if (!win->in_use) {
-    //     QWS_TRACE("window is not in use anymore! destroyed?");
-    //     return;
-    // }
 
     /* Translate surface-local coords to QWS global coords */
     pointer_data->gx = win->geometry.x + wl_fixed_to_int(sx);
@@ -70,13 +65,8 @@ static void pointer_enter(void *data, struct wl_pointer *ptr,
                            wl_fixed_t sx, wl_fixed_t sy)
 {
     qwswl_window_t *win = qwswl_surface_to_win(surface);
-    if (!win) {
-        QWS_TRACE("surface or window not available");
-        return;
-    }
+    assert(win);
 
-    qwswl_state_t *state = (qwswl_state_t *)data;
-    qwswl_client_t *cl = win->client;
     qwswl_pointer_data_t *pointer_data =
         malloc(sizeof(qwswl_pointer_data_t));
     assert(pointer_data);
@@ -99,10 +89,7 @@ static void pointer_leave(void *data, struct wl_pointer *ptr,
     wl_pointer_set_user_data(ptr, NULL);
 
     qwswl_window_t *win = qwswl_surface_to_win(surface);
-    if (win)
-        QWS_TRACE("left qws_id=%d", win->qws_id);
-    else
-        QWS_TRACE("left destroyed window");
+    assert(win);
 }
 
 static void pointer_motion(void *data, struct wl_pointer *ptr,
@@ -214,10 +201,7 @@ static void keyboard_enter(void *data, struct wl_keyboard *kbd,
     uint32_t *k;
     qwswl_keyboard_data_t *kbd_data = wl_keyboard_get_user_data(kbd);
     qwswl_window_t *win = qwswl_surface_to_win(surface);
-    if (!win) {
-        QWS_TRACE("surface or window not available");
-        return;
-    }
+    assert(win);
 
     kbd_data->win = win;
 
@@ -244,8 +228,7 @@ static void keyboard_leave(void *data, struct wl_keyboard *kbd,
     qwswl_window_t *win = kbd_data->win;
     assert(kbd_data && win);
 
-    if (!surface)
-        return;
+    assert(surface);
 
     QWS_TRACE("qws_win=%d", win->qws_id);
 

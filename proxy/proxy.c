@@ -4,6 +4,7 @@
  */
 
 #include "proxy.h"
+#include "client.h"
 #include "window.h"
 #include "qws_server_helpers.h"
 #include "qws_trace.h"
@@ -124,7 +125,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
  
         int32_t first_id = cl->next_window_id + 1;
         for (int32_t i = 0; i < cmd->count; i++) {
-            /* Create a window on-demand if the id has already been allocated before */
+            /* Create a window */
             assert(qwswl_create_window(state, cl, false));
         }
  
@@ -139,7 +140,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_cmd_region_request_t *cmd =
             (qws_cmd_region_request_t *)incoming_pkt->simple_data;
 
-        qwswl_window_t *win = qwswl_find_window(cl, cmd->window);
+        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         if (!win) {
             fprintf(stderr, "[qwswayland] Illegal window id %d from client %d\n",
                 cmd->window, cl->fd);
@@ -151,7 +152,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_rect_t *rects = (qws_rect_t *)incoming_pkt->raw_data;
         char * surface_key;
         uint8_t *surface_data = 
-            &((char *) incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t) + cmd->surfacekeylength * 2];
+            &((uint8_t *) incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t) + cmd->surfacekeylength * 2];
 
         if (nrects > 0) {
             if (qws_convert_to_narrow_unicode(&surface_key, (const wchar_t *)
@@ -183,8 +184,14 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             /* The QWS client wants us to hide the surface temporarily, so
              * will re-attach a NULL buffer as content, so that the compositor
              * won't have anything to render anymore. */
+            qwswl_detach_client_shm(win);
+
+            win->geometry.height = -1;
+            win->geometry.width = -1;
+
             wl_surface_attach(win->wl_surface, NULL, 0, 0);
             wl_surface_commit(win->wl_surface);
+            wl_display_flush(state->wl_display);
 
             break;
         }
@@ -206,7 +213,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_cmd_region_name_t *cmd =
             (qws_cmd_region_name_t *)incoming_pkt->simple_data;
 
-        qwswl_window_t *win = qwswl_find_window(cl, cmd->window);
+        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
 
         if (qws_convert_to_narrow_unicode(&region_name, (const wchar_t *)
@@ -236,7 +243,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             (qws_cmd_repaint_region_t *)incoming_pkt->simple_data;
         qws_rect_t *rects = (qws_rect_t *)incoming_pkt->raw_data;
 
-        qwswl_window_t *win = qwswl_find_window(cl, cmd->window);
+        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
 
@@ -248,8 +255,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     case QWS_CMD_REGION_MOVE: {
         qws_cmd_region_move_t *cmd =
             (qws_cmd_region_move_t *)incoming_pkt->simple_data;
+        (void) cmd;
 
-        // qwswl_window_t *win = qwswl_find_window(cl, cmd->window);
+        // qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         // assert(win);
         // win->geometry.x += cmd->dx;
         // win->geometry.y += cmd->dy;
@@ -260,7 +268,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_cmd_region_destroy_t *cmd =
             (qws_cmd_region_destroy_t *)incoming_pkt->simple_data;
 
-        qwswl_window_t *win = qwswl_find_window(cl, cmd->window);
+        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
         qwswl_destroy_window(state, win);
         break;
@@ -270,7 +278,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_cmd_change_altitude_t *cmd =
             (qws_cmd_change_altitude_t *)incoming_pkt->simple_data;
 
-        qwswl_window_t *win = qwswl_find_window(cl, cmd->window);
+        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         if (!win) {
             fprintf(stderr, "[qwswayland] Illegal window id %d from client %d\n",
                 cmd->window, cl->fd);
@@ -301,6 +309,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     case QWS_CMD_REQUEST_FOCUS: {
         qws_cmd_request_focus_t *cmd =
             (qws_cmd_request_focus_t *)incoming_pkt->simple_data;
+        (void) cmd;
 
         break;
     }
@@ -309,7 +318,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_cmd_set_opacity_t *cmd =
             (qws_cmd_set_opacity_t *)incoming_pkt->simple_data;
 
-        qwswl_window_t *win = qwswl_find_window(cl, cmd->window);
+        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
         /* Wayland doesn't have per-surface opacity natively.
          * Could use wp_alpha_modifier or compositor-specific protocol. */

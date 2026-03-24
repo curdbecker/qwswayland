@@ -16,8 +16,6 @@
 extern "C" {
 #endif
 
-#define QWSWL_MAX_WINDOWS    256
-
 /* -----------------------------------------------------------
  * Per-window state: maps QWS window ID → Wayland surface
  * ----------------------------------------------------------- */
@@ -77,11 +75,12 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win);
 /* Set the xdg_toplevel title from the QWS region name/caption. */
 void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);
 
-/* Attach (or reattach) the QWS client's SysV shm as a permanently-mapped
+/* Attach, reattach or detach the QWS client's SysV shm as a permanently-mapped
  * read-only buffer on the window. Detaches any previously attached mapping
  * when the shm_id changes. */
 void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id,
                               int32_t width, int32_t height);
+void qwswl_detach_client_shm(qwswl_window_t *win);
 
 /* Copy pixels from QWS client's shared memory into the Wayland buffer,
  * and commit the surface. */
@@ -93,13 +92,11 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
                                 const qws_rect_t *rects, int32_t nrects);
 
 /* -----------------------------------------------------------
- * Lookup helpers
+ * Hash-table + lookup helpers
  * ----------------------------------------------------------- */
 
 /* Resolve a Wayland surface to its in-use QWS window. */
-qwswl_window_t * qwswl_surface_to_win(struct wl_surface *surface);
-
-qwswl_window_t * qwswl_find_window(qwswl_client_t *client, int32_t qws_id);
+qwswl_window_t *qwswl_surface_to_win(struct wl_surface *surface);
 
 #ifdef __cplusplus
 }

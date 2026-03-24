@@ -19,7 +19,7 @@ xdg_output_src = wayland_mod.scan_xml(
 
 proxy_sources = files(
   'main.c',
-  'connection.c',
+  'client.c',
   'lifecycle.c',
   'proxy.c',
   'seat.c',

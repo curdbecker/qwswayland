@@ -7,7 +7,7 @@
 #define PROXY_H
 
 #include "lifecycle.h"
-#include "connection.h"
+#include "client.h"
 #include "qws_proto.h"
 
 #ifdef __cplusplus

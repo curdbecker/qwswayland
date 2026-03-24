@@ -17,15 +17,19 @@
 #include "xdg-shell-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
 
+#include "stc/types.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+typedef struct qwswl_client qwswl_client_t;
+declare_hashmap(qwswl_client_map_t, int32_t, qwswl_client_t *);
 
 /* -----------------------------------------------------------
  * Configuration
  * ----------------------------------------------------------- */
 
-#define QWSWL_MAX_CLIENTS    32
 #define QWSWL_SHM_SIZE       1024
 
 /* -----------------------------------------------------------
@@ -36,6 +40,8 @@ typedef struct qwswl_state {
     /* QWS server side */
     int                  qws_server_fd;
     char                 socket_path[PATH_MAX];
+
+    qwswl_client_map_t   client_map;
 
     /* Shared memory region (display properties) */
     qws_shm_t            display_shm;
@@ -70,7 +76,8 @@ typedef struct qwswl_state {
 
     /* Event loop */
     bool                 running;
-    int                  epoll_fd;
+    int                  qws_epoll_fd;
+    int                  loop_epoll_fd;
 } qwswl_state_t;
 
 /* Initialize the proxy: connect to Wayland, set up QWS server socket,
@@ -82,6 +89,11 @@ int  qwswl_init(qwswl_state_t *state, int qws_display,
 /* Clean shutdown: destroy all Wayland objects, disconnect clients,
  * and remove the QWS server socket. */
 void qwswl_shutdown(qwswl_state_t *state);
+
+/* Run the main epoll event loop (blocks until shutdown). */
+int  qwswl_run(qwswl_state_t *state);
+
+void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl);
 
 #ifdef __cplusplus
 }
