@@ -78,10 +78,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         int32_t lock_id = cmd->id_lock;
  
         if (lock_id >= 0) {
-            if (qws_lock_open(&cl->lock, state->ipc_type, lock_id) == 0) {
-                fprintf(stderr, "[qwswayland] Client %d: attached to lock id=%d (%s)\n",
-                        cl->client_id, lock_id,
-                        state->ipc_type == QWS_IPC_SYSV ? "SysV" : "POSIX");
+            cl->lock = qwslock_open(lock_id);
+            if (cl->lock) {
+                fprintf(stderr, "[qwswayland] Client %d: attached to lock id=%d\n",
+                        cl->client_id, lock_id);
             } else {
                 fprintf(stderr, "[qwswayland] Client %d: FAILED to attach lock id=%d\n",
                         cl->client_id, lock_id);
@@ -200,7 +200,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_trace_packet(cl->client_id, evt, true);
         qws_write_packet(cl->fd, evt);
         
-        qws_lock_unlock(&cl->lock, QWS_LOCK_REGIONEVENT);
+        qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
 
         break;
     }
@@ -254,7 +254,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             // { win->geometry.x, win->geometry.y, win->geometry.width, win->geometry.height };
             // qwswl_update_surface(state, win, &window_rect, 1);
 
-        qws_lock_unlock(&cl->lock, QWS_LOCK_REGIONEVENT);
+        qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
         
         break;
     }
@@ -423,6 +423,6 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * The client blocks in sendSynchronousCommand() and won't process the event 
          * until it can decrement the semaphore. The server has to increment the semaphore
          * first after sending the event. */
-        qws_lock_unlock(&cl->lock, QWS_LOCK_COMMUNICATION);
+        qwslock_unlock(cl->lock, QWS_LOCK_COMMUNICATION);
     }
 }

@@ -69,7 +69,7 @@
             "request": "launch",
             "name": "trace: 2. Proxy",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/trace_proxy/qws_trace_proxy",
-            "args": ["-l", "2", "-s", "1", "-vvv"],
+            "args": ["-l", "2", "-u", "1", "-vvv"],
             "cwd": "${workspaceFolder}",
             "MIMode": "gdb",
             "setupCommands": [

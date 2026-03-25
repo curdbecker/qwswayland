@@ -41,8 +41,6 @@ static void usage(const char *prog)
         "                        -v    one-line per packet (type + sizes)\n"
         "                        -vv   decode struct fields\n"
         "                        -vvv  full hex dump of all payloads\n"
-        "  -P, --posix-ipc     Use POSIX named semaphores instead of SysV IPC\n"
-        "                        (match this to your Qt 4.8 build's QT_POSIX_IPC setting)\n"
         "  -x, --exclude LIST  Comma-separated list of packet type names or numbers to\n"
         "                        suppress from trace output. Prefix with 'cmd:' or 'evt:'\n"
         "                        to restrict to commands or events; unprefixed names are\n"
@@ -64,7 +62,6 @@ int main(int argc, char *argv[])
     int32_t height = 0;
     int32_t depth = 32;
     int verbose = 0;
-    int posix_ipc = 0;
     bool debug_draw_rects = false;
     uint64_t exclude_cmd_mask = 0;
     uint64_t exclude_evt_mask = 0;
@@ -75,7 +72,6 @@ int main(int argc, char *argv[])
         { "height",    required_argument, 0, 'h' },
         { "depth",     required_argument, 0, 'b' },
         { "verbose",   no_argument,       0, 'v' },
-        { "posix-ipc", no_argument,       0, 'P' },
         { "exclude",     required_argument, 0, 'x' },
         { "debug-rects", no_argument,       0, 'D' },
         { "help",        no_argument,       0, 'H' },
@@ -83,14 +79,13 @@ int main(int argc, char *argv[])
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "d:w:h:b:vPx:D", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "d:w:h:b:vx:D", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'd': qws_display = atoi(optarg); break;
         case 'w': width = atoi(optarg); break;
         case 'h': height = atoi(optarg); break;
         case 'b': depth = atoi(optarg); break;
         case 'v': verbose++; break;
-        case 'P': posix_ipc = 1; break;
         case 'x': qws_trace_parse_exclude_list(optarg, &exclude_cmd_mask, &exclude_evt_mask); break;
         case 'D': debug_draw_rects = true; break;
         case 'H':
@@ -114,10 +109,15 @@ int main(int argc, char *argv[])
     fprintf(stderr, "QWSWayland v0.1.0 - QWS->Wayland proxy\n");
     fprintf(stderr, "Display :%d, screen %dx%d@%dbpp, verbose=%d, ipc=%s\n",
             qws_display, width, height, depth, verbose,
-            posix_ipc ? "posix" : "sysv");
+#ifdef QWS_IPC_POSIX
+            "posix"
+#else
+            "sysv"
+#endif
+            );
 
     if (qwswl_init(&g_state, qws_display, width, height, depth,
-                    posix_ipc ? QWS_IPC_POSIX : QWS_IPC_SYSV, debug_draw_rects) != 0) {
+                    debug_draw_rects) != 0) {
         fprintf(stderr, "Failed to initialize. Exiting.\n");
         return 1;
     }

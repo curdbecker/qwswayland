@@ -435,9 +435,8 @@ int qws_write_packet(int fd, const qws_packet_t *pkt)
 /* ================================================================
  * Shared memory
  * ================================================================ */
-
-static
-int qws_shm_create_ipc(qws_shm_t *shm, size_t size) {
+#ifdef QWS_IPC_POSIX
+static int qws_shm_create_ipc(qws_shm_t *shm, size_t size) {
     char shm_name[128];
     void *p;
     int fd;
@@ -466,8 +465,9 @@ error:
     return -1;
 }
 
-static
-int qws_shm_create_sysv(qws_shm_t *shm, size_t size) {
+#else
+
+static int qws_shm_create_sysv(qws_shm_t *shm, size_t size) {
     int id = shmget(IPC_PRIVATE, size, IPC_CREAT | IPC_EXCL | 0600);
     if (id < 0)
         return -1;
@@ -484,21 +484,20 @@ int qws_shm_create_sysv(qws_shm_t *shm, size_t size) {
     return 0;
 }
 
-int qws_shm_create(qws_shm_t *shm, size_t size, qws_ipc_type_t ipc_type)
+#endif
+
+int qws_shm_create(qws_shm_t *shm, size_t size)
 {
     memset(shm, 0, sizeof(*shm));
     shm->shm_id = -1;
     shm->fd = -1;
     shm->size = size;
 
-    switch(ipc_type) {
-    case QWS_IPC_SYSV:
-        return qws_shm_create_sysv(shm, size);
-    case QWS_IPC_POSIX:
-        return qws_shm_create_ipc(shm, size);
-    default:
-        assert(false);
-    }
+#ifdef QWS_IPC_POSIX
+    return qws_shm_create_ipc(shm, size);
+#else
+    return qws_shm_create_sysv(shm, size);
+#endif
 }
 
 void qws_shm_destroy(qws_shm_t *shm)

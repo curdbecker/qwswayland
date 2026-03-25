@@ -156,10 +156,9 @@ static const struct wl_registry_listener registry_listener = {
 
 int qwswl_init(qwswl_state_t *state, int qws_display,
                 int32_t width, int32_t height, int32_t depth,
-                qws_ipc_type_t ipc_type, bool debug_draw_rects)
+                bool debug_draw_rects)
 {
     memset(state, 0, sizeof(*state));
-    state->ipc_type = ipc_type;
     state->debug_draw_rects = debug_draw_rects;
     state->qws_server_fd = -1;
     state->qws_epoll_fd = -1;
@@ -257,13 +256,21 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
             state->socket_path);
 
     /* Create a shared memory region from the server-side to share display information
-     * with the client. This looks to be a legacy way from earlier Qt Versions to share
-     * information between client and server. By now, the only real use that is left
+     * with the client... and don't forget about the lock.
+     *
+     * This looks like a legacy way in earlier Qt Versions for sharing information 
+     * between client and server. By now, the only real use that is left
      * is apparently the sharing of override cursors - which we likely won't do.
+     * 
      * However, the client refuses to start without it, so we unfortunately need 
-     * to create it.*/
-    if (qws_shm_create(&state->display_shm, QWSWL_SHM_SIZE, state->ipc_type) != 0) {
+     * the shm region and its lock.*/
+    if (qws_shm_create(&state->display_shm, QWS_DISPLAY_SHM_SIZE) != 0) {
         fprintf(stderr, "[qwswayland] Failed to create display shm\n");
+        return -1;
+    }
+    state->display_lock = qlock_create(state->socket_path, 'd');
+    if (state->display_lock == NULL) {
+        fprintf(stderr, "[qwswayland] Failed to create display lock\n");
         return -1;
     }
 
@@ -347,6 +354,9 @@ void qwswl_shutdown(qwswl_state_t *state)
     }
 
     qws_shm_destroy(&state->display_shm);
+
+    if (state->display_lock != NULL)
+        qlock_destroy(state->display_lock);
 
     if (state->qws_epoll_fd >= 0)
         close(state->qws_epoll_fd);

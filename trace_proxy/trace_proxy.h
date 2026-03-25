@@ -12,6 +12,7 @@
 #define TRACE_PROXY_H
 
 #include "qws_proto.h"
+#include "qws_lock.h"
 
 #include <stdbool.h>
 
@@ -28,7 +29,10 @@ typedef struct {
     qws_reader_t cmd_reader;  /* command parser  (client → server) */
     qws_reader_t evt_reader;  /* event parser    (server → client) */
 
-    char server_path[256];    /* upstream QWS server socket path */
+    qws_shm_t    listen_display_shm;
+    qlock_t     *listen_display_lock;
+
+    char upstream_path[256];    /* upstream QWS server socket path */
     int  client_id;           /* incremented each session, used in trace labels */
 
     bool running;
@@ -37,7 +41,7 @@ typedef struct {
 /* Initialise state and create the listen socket on socket_path.
  * Returns 0 on success, -1 on error. */
 int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
-                  const char *server_path);
+                  const char *upstream_path);
 
 /* Run the proxy event loop. Blocks until a signal closes listen_fd. */
 int qwstrace_run(qwstrace_state_t *st);

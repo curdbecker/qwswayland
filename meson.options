@@ -6,3 +6,6 @@ option('build_example', type: 'boolean', value: true,
 
 option('build_trace_proxy', type: 'boolean', value: true,
   description: 'Build the qws_trace_proxy debugging tool')
+
+option('ipc_backend', type: 'combo', choices: ['sysv', 'posix'], value: 'sysv',
+  description: 'IPC backend for semaphores and shared memory (match your Qt build)')

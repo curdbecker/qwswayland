@@ -34,7 +34,7 @@ typedef struct qwswl_client {
     int32_t             focused_window_id;
 
     /* Per-client lock (3 semaphores: BackingStore, Communication, RegionEvent) */
-    qws_lock_t          lock;
+    qwslock_t         *lock;
 } qwswl_client_t;
 
 qwswl_client_t *qwswl_create_client(int fd, int32_t id);

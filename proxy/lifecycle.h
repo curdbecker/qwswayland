@@ -7,6 +7,7 @@
 #define LIFECYCLE_H
 
 #include "qws_proto.h"
+#include "qws_lock.h"
 
 #include <stdbool.h>
 #include <limits.h>
@@ -27,12 +28,6 @@ typedef struct qwswl_client qwswl_client_t;
 declare_hashmap(qwswl_client_map_t, int32_t, qwswl_client_t *);
 
 /* -----------------------------------------------------------
- * Configuration
- * ----------------------------------------------------------- */
-
-#define QWSWL_SHM_SIZE       1024
-
-/* -----------------------------------------------------------
  * Main proxy state
  * ----------------------------------------------------------- */
 
@@ -43,11 +38,9 @@ typedef struct qwswl_state {
 
     qwswl_client_map_t   client_map;
 
-    /* Shared memory region (display properties) */
+    /* Shared memory region and lock (display properties) */
     qws_shm_t            display_shm;
-
-    /* IPC backend: QWS_IPC_SYSV or QWS_IPC_POSIX */
-    qws_ipc_type_t       ipc_type;
+    qlock_t              *display_lock;
 
     /* Screen parameters (reported to QWS clients) */
     int32_t              screen_width;
@@ -87,7 +80,7 @@ typedef struct qwswl_state {
  * and initialize epoll. */
 int  qwswl_init(qwswl_state_t *state, int qws_display,
                 int32_t width, int32_t height, int32_t depth,
-                qws_ipc_type_t ipc_type, bool debug_draw_rects);
+                bool debug_draw_rects);
 
 /* Clean shutdown: destroy all Wayland objects, disconnect clients,
  * and remove the QWS server socket. */

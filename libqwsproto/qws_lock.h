@@ -1,17 +1,23 @@
 /*
- * qws_lock.h - QWS locking primitives
+ * qws_lock.h - Qt and QWS locking primitives
  *
  * QWSLock: Per-client lock with 3 semaphores used for synchronizing
- *  client↔server communication. Created by the client; its ID is sent
+ *  client↔server communication. Created by the server; its ID is sent
  *  to the client which attaches to the same semaphore set.
+ *  Mirrors Qt 4.8's QWSLock class.
  *
  *  Semaphore indices:
  *    [0] BackingStore    - guards shared pixel buffer access
  *    [1] Communication   - guards command/event socket exchanges
  *    [2] RegionEvent     - signals pending region events to client
  *
- * We provide SysV IPC and POSIX IPC backends, selectable at creation time,
- * since the server doesn't know which the client was compiled to use.
+ * QLock: General reader-writer lock identified by (filename, char id).
+ *  Multiple locks may share a filename, differentiated by the id char.
+ *  Mirrors Qt 4.8's QLock class.
+ *
+ * The IPC backend (SysV vs POSIX) is selected at compile time via define
+ * QWS_IPC_POSIX (meson: ipc_backend=posix). Default is SysV.
+ * See README.md for full protocol details.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -21,7 +27,6 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include <semaphore.h>
 
 #include "qws_proto.h"
 
@@ -34,65 +39,87 @@ extern "C" {
  * ================================================================ */
 
 /* Semaphore indices — must match Qt 4.8 QWSLock::LockType */
-enum qws_lock_type {
+typedef enum {
     QWS_LOCK_BACKINGSTORE  = 0,
     QWS_LOCK_COMMUNICATION = 1,
     QWS_LOCK_REGIONEVENT   = 2,
-};
+} qwslock_type_t;
 
-#define QWS_LOCK_NUM_SEMS 3
+/* ================================================================
+ * QLock: reader-writer lock
+ * ================================================================ */
 
-typedef struct {
-    qws_ipc_type_t  ipc_type;
-    bool             owned;       /* true = we created it (server) */
+/* Mirrors Qt 4.8 QLock::Type */
+typedef enum {
+    QWS_QLOCK_READ  = 0,   /* shared read lock  */
+    QWS_QLOCK_WRITE = 1,   /* exclusive write lock */
+} qlock_type_t;
 
-    /* SysV backend */
-    int              sysv_semid;  /* semaphore set id, or -1 */
+/* ================================================================
+ * Opaque handle types (struct definitions live in qws_lock.c)
+ * ================================================================ */
 
-    /* POSIX backend */
-    sem_t           *posix_sems[QWS_LOCK_NUM_SEMS];  /* SEM_FAILED if unused */
-    int              posix_id;    /* numeric id used in sem names */
+typedef struct qws_lock qwslock_t;   /* QWSLock opaque handle */
+typedef struct q_lock   qlock_t;     /* QLock opaque handle */
 
-    /* Lock counts (for nestable locking by same process) */
-    int              lock_count[2];  /* only BackingStore and Communication are counted */
-} qws_lock_t;
+/* ================================================================
+ * QWSLock API
+ * ================================================================ */
 
-/* Create a new lock (server-side). Allocates the semaphores.
- * Returns 0 on success. The id() can then be sent to the client. */
-int  qws_lock_create(qws_lock_t *lock, qws_ipc_type_t type);
+/* Create a new QWSLock (server-side). Allocates the semaphores.
+ * Returns pointer on success, NULL on failure.
+ * Use qwslock_id() to get the id to send to the client. */
+qwslock_t  *qwslock_create(void);
 
-/* Attach to an existing lock by ID (client-side).
+/* Attach to an existing QWSLock by ID (client-side).
  * For SysV, id is the semaphore set id.
- * For POSIX, id is the numeric identifier used in the sem names. */
-int  qws_lock_open(qws_lock_t *lock, qws_ipc_type_t type, int id);
+ * For POSIX, id is the numeric identifier used in the sem names.
+ * Returns pointer on success, NULL on failure. */
+qwslock_t  *qwslock_open(int id);
 
-/* Destroy / detach the lock. If owned, removes the semaphores. */
-void qws_lock_destroy(qws_lock_t *lock);
+/* Destroy / detach the lock. If owned, removes the semaphores.
+ * Also frees the allocation. NULL-safe. */
+void qwslock_destroy(qwslock_t *lock);
 
 /* Get the ID to send to the client (for the Connected event or
  * IdentifyCommand). */
-int  qws_lock_id(const qws_lock_t *lock);
+int  qwslock_id(const qwslock_t *lock);
 
 /* Lock operations (sem_down). Blocks if already locked.
  * `which`: QWS_LOCK_BACKINGSTORE, QWS_LOCK_COMMUNICATION, or QWS_LOCK_REGIONEVENT */
-int  qws_lock_lock(qws_lock_t *lock, int which);
+int  qwslock_lock(qwslock_t *lock, qwslock_type_t which);
 
 /* Unlock (sem_up). */
-int  qws_lock_unlock(qws_lock_t *lock, int which);
-
-/* Non-blocking try-lock. Returns 0 if acquired, -1 if would block. */
-int  qws_lock_trylock(qws_lock_t *lock, int which);
+int  qwslock_unlock(qwslock_t *lock, qwslock_type_t which);
 
 /* Wait for a semaphore to become non-zero (used for RegionEvent).
  * This is a blocking wait + immediate re-lock pattern. */
-int  qws_lock_wait(qws_lock_t *lock, int which);
+int  qwslock_wait(qwslock_t *lock, qwslock_type_t which);
 
 /* Query current value of a semaphore. Returns value or -1 on error. */
-int  qws_lock_get_value(const qws_lock_t *lock, int which);
+int  qwslock_get_value(const qwslock_t *lock, qwslock_type_t which);
 
-/* Check if we hold a lock (based on lock_count). Only valid for
- * BackingStore and Communication. */
-bool qws_lock_has_lock(const qws_lock_t *lock, int which);
+/* ================================================================
+ * QLock API
+ * ================================================================ */
+
+/* Create a new QLock (server/creator side).
+ * filename + id identifies the lock; multiple locks may share a filename.
+ * Returns pointer on success, NULL on failure. */
+qlock_t *qlock_create(const char *filename, char id);
+
+/* Attach to an existing QLock (client side).
+ * Returns pointer on success, NULL on failure. */
+qlock_t *qlock_open(const char *filename, char id);
+
+/* Destroy / detach the lock. If owned, removes the semaphores.
+ * Also frees the allocation. NULL-safe. */
+void qlock_destroy(qlock_t *lock);
+
+/* Lock/unlock with Read or Write type (type = qlock_type_t).
+ * Read = shared; Write = exclusive. */
+int  qlock_lock(qlock_t *lock, qlock_type_t type);
+int  qlock_unlock(qlock_t *lock, qlock_type_t type);
 
 #ifdef __cplusplus
 }

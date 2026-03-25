@@ -682,10 +682,10 @@ int qws_write_packet(int fd, const qws_packet_t *pkt);
  * Shared memory helpers
  * ----------------------------------------------------------- */
 
-typedef enum {
-    QWS_IPC_SYSV,       /* SysV IPC (semget/semop/semctl) */
-    QWS_IPC_POSIX,       /* POSIX named semaphores (sem_open) */
-} qws_ipc_type_t;
+/* IPC backend selected at compile time via -DQWS_IPC_POSIX (meson: -Dipc_backend=posix).
+ * Default (no define): SysV IPC. With -DQWS_IPC_POSIX: POSIX named semaphores. */
+
+#define QWS_DISPLAY_SHM_SIZE       1024
 
 typedef struct {
     int    shm_id;     /* SysV shm id, or -1 if using mmap */
@@ -695,8 +695,8 @@ typedef struct {
 } qws_shm_t;
 
 /* Create a new shared memory region of given size.
- * Returns 0 on success. */
-int qws_shm_create(qws_shm_t *shm, size_t size, qws_ipc_type_t ipc_type);
+ * Returns 0 on success. Backend selected at compile time. */
+int qws_shm_create(qws_shm_t *shm, size_t size);
 
 /* Detach/destroy shared memory (also removes SysV segment). */
 void qws_shm_destroy(qws_shm_t *shm);

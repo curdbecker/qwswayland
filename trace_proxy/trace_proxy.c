@@ -72,7 +72,7 @@ static int write_all(int fd, const void *buf, size_t len)
 /* ------------------------------------------------------------------ */
 
 int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
-                  const char *server_path)
+                  const char *upstream_path)
 {
     memset(st, 0, sizeof(*st));
     st->client_fd = -1;
@@ -80,7 +80,7 @@ int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
     st->listen_fd = -1;
     st->epoll_fd  = -1;
 
-    strncpy(st->server_path, server_path, sizeof(st->server_path) - 1);
+    strncpy(st->upstream_path, upstream_path, sizeof(st->upstream_path) - 1);
 
     qws_reader_init(&st->cmd_reader, true  /* reading commands */);
     qws_reader_init(&st->evt_reader, false /* reading events  */);
@@ -98,12 +98,22 @@ int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
         return -1;
     }
 
+    if (qws_shm_create(&st->listen_display_shm, QWS_DISPLAY_SHM_SIZE) != 0) {
+        fprintf(stderr, "[qwswayland] Failed to create display shm\n");
+        return -1;
+    }
+    st->listen_display_lock = qlock_create(listen_path, 'd');
+    if (st->listen_display_lock == NULL) {
+        fprintf(stderr, "[qwswayland] Failed to create display lock\n");
+        return -1;
+    }
+
     struct epoll_event ev = { .events = EPOLLIN, .data.fd = st->listen_fd };
     epoll_ctl(st->epoll_fd, EPOLL_CTL_ADD, st->listen_fd, &ev);
 
     st->running = true;
     fprintf(stderr, "qws_trace_proxy: listening on %s\n", listen_path);
-    fprintf(stderr, "qws_trace_proxy: will connect upstream to %s\n", server_path);
+    fprintf(stderr, "qws_trace_proxy: will connect upstream to %s\n", upstream_path);
     return 0;
 }
 
@@ -141,10 +151,10 @@ int qwstrace_run(qwstrace_state_t *st)
                 fprintf(stderr, "\n--- session %d: client connected ---\n",
                         st->client_id);
 
-                int sfd = qws_client_connect(st->server_path);
+                int sfd = qws_client_connect(st->upstream_path);
                 if (sfd < 0) {
                     fprintf(stderr, "qwstrace: cannot connect to upstream %s: %s\n",
-                            st->server_path, strerror(errno));
+                            st->upstream_path, strerror(errno));
                     close(cfd);
                     continue;
                 }
@@ -223,6 +233,11 @@ int qwstrace_run(qwstrace_state_t *st)
 void qwstrace_shutdown(qwstrace_state_t *st)
 {
     drop_connection(st);
+
+    qws_shm_destroy(&st->listen_display_shm);
+
+    if (st->listen_display_lock != NULL)
+        qlock_destroy(st->listen_display_lock);
 
     if (st->listen_fd >= 0) {
         close(st->listen_fd);

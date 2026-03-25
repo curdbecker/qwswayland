@@ -21,8 +21,8 @@ static void signal_handler(int sig)
     (void)sig;
     /* Force the epoll_wait loop to exit by closing the listen fd.
      * epoll_wait returns EBADF / EINTR and we break out cleanly. */
-    if (g_state.listen_fd >= 0)
-        close(g_state.listen_fd);
+    if (g_state.epoll_fd >= 0)
+        close(g_state.epoll_fd);
 }
 
 static void usage(const char *prog)
@@ -35,7 +35,7 @@ static void usage(const char *prog)
         "\n"
         "Options:\n"
         "  -l, --listen N      QWS display number to listen on (default: 1)\n"
-        "  -s, --server N      Upstream QWS server display number (default: 0)\n"
+        "  -u, --upstream N    Upstream QWS server display number (default: 0)\n"
         "  -v, --verbose       Increase verbosity (repeatable: -v/-vv/-vvv)\n"
         "                        -v    one-line per packet (type + sizes)\n"
         "                        -vv   decode struct fields\n"
@@ -52,13 +52,13 @@ static void usage(const char *prog)
         "\n"
         "Typical usage:\n"
         "  # Terminal 1: real QWS server on display 0\n"
-        "  qwswayland -d 0\n"
+        "  myqws -qws -display ':0'\n"
         "\n"
         "  # Terminal 2: trace proxy\n"
-        "  qws_trace_proxy -l 1 -s 0 -vv\n"
+        "  qws_trace_proxy -l 1 -u 0 -vv\n"
         "\n"
         "  # Terminal 3: Qt app pointed at display 1\n"
-        "  QWS_DISPLAY=:1 myapp -qws\n"
+        "  myapp -display ':1'\n"
         "\n",
         prog);
 }
@@ -67,15 +67,14 @@ static void usage(const char *prog)
 int main(int argc, char *argv[])
 {
     int listen_display = 1;
-    int server_display = 0;
-    char server_path_override[256] = {0};
+    int upstream_display = 0;
     int verbose = 0;
     uint64_t exclude_cmd_mask = 0;
     uint64_t exclude_evt_mask = 0;
 
     static struct option long_opts[] = {
         { "listen",      required_argument, 0, 'l' },
-        { "server",      required_argument, 0, 's' },
+        { "upstream",      required_argument, 0, 'u' },
         { "verbose",     no_argument,       0, 'v' },
         { "exclude",     required_argument, 0, 'x' },
         { "help",        no_argument,       0, 'H' },
@@ -83,10 +82,10 @@ int main(int argc, char *argv[])
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "l:s:S:vx:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "l:u:vx:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'l': listen_display = atoi(optarg); break;
-        case 's': server_display = atoi(optarg); break;
+        case 'u': upstream_display = atoi(optarg); break;
         case 'v': verbose++; break;
         case 'x': qws_trace_parse_exclude_list(optarg, &exclude_cmd_mask, &exclude_evt_mask); break;
         case 'H':
@@ -113,17 +112,17 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    char server_path[256];
-    if (qws_socket_path(server_display, server_path, sizeof(server_path)) != 0) {
-        fprintf(stderr, "Failed to build server socket path for display %d\n",
-                server_display);
+    char upstream_path[256];
+    if (qws_socket_path(upstream_display, upstream_path, sizeof(upstream_path)) != 0) {
+        fprintf(stderr, "Failed to build upstream socket path for display %d\n",
+                upstream_display);
         return 1;
     }
 
     fprintf(stderr, "qws_trace_proxy: listen=:%d  upstream=:%d  verbose=%d\n",
-            listen_display, server_display, verbose);
+            listen_display, upstream_display, verbose);
 
-    if (qwstrace_init(&g_state, listen_path, server_path) != 0) {
+    if (qwstrace_init(&g_state, listen_path, upstream_path) != 0) {
         fprintf(stderr, "Initialization failed. Exiting.\n");
         return 1;
     }

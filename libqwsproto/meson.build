@@ -1,5 +1,9 @@
 cc = meson.get_compiler('c')
 
+if get_option('ipc_backend') == 'posix'
+  add_project_arguments('-DQWS_IPC_POSIX', language: 'c')
+endif
+
 qwsproto_sources = files(
   'qws_lock.c',
   'qws_proto.c',
