@@ -105,7 +105,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         * must proactively provide IDs — the client does not send a
         * Create command first. Therefore, the first window is allocated
         * by default. */
-        qwswl_window_t *window = qwswl_create_window(state, cl, true);
+        qwswl_window_t *window = qwswl_allocate_window(cl);
     
         qws_packet_t *cre = qws_make_creation_event(window->qws_id, 1);
         qws_trace_packet(cl->client_id, cre, true);
@@ -126,7 +126,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         int32_t first_id = cl->next_window_id + 1;
         for (int32_t i = 0; i < cmd->count; i++) {
             /* Create a window */
-            assert(qwswl_create_window(state, cl, false));
+            assert(qwswl_allocate_window(cl));
         }
  
         qws_packet_t *evt = qws_make_creation_event(first_id, cmd->count);
@@ -178,22 +178,20 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             /* We grant the full requested region and also
              * use it to size the Wayland surface. */
             qwswl_update_geometry(state, win, rects, nrects);
-            qwswl_update_surface(state, win, rects, nrects);
 
+            /* If the surface for the window already exists, then 
+             * we're able to actually display content. Otherwise, we
+             * need to wait until we are being let know what type
+             * of window we are actually dealing with. And when is 
+             * the best time for that to happen:
+             *  - during creation? No way.
+             *  - during region definition? That's too easy.
+             *  - during repaint? Yes, exactly there :-/ */
+            if (win->wl_surface)
+                qwswl_update_surface(state, win, rects, nrects);
         } else {
-            /* The QWS client wants us to hide the surface temporarily, so
-             * will re-attach a NULL buffer as content, so that the compositor
-             * won't have anything to render anymore. */
-            qwswl_detach_client_shm(win);
-
-            win->geometry.height = -1;
-            win->geometry.width = -1;
-
-            wl_surface_attach(win->wl_surface, NULL, 0, 0);
-            wl_surface_commit(win->wl_surface);
-            wl_display_flush(state->wl_display);
-
-            break;
+            /* The QWS client wants us to hide the surface temporarily. */
+            qwswl_hide_window(state, win);
         }
 
         /* Send the region back as granted */
@@ -243,9 +241,18 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             (qws_cmd_repaint_region_t *)incoming_pkt->simple_data;
         qws_rect_t *rects = (qws_rect_t *)incoming_pkt->raw_data;
 
-        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
-        assert(win);
+        qwswl_window_t *win = 
+            qwswl_lookup_window_on_client(cl, cmd->window);
+        if (!win->wl_surface) {
+            qwswl_create_window(state, win, 
+                qwswl_find_active_top_in_stack(cl), cmd->window_flags);
+            qwswl_stack_dump(cl);
+        }
+
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
+            //     const qws_rect_t window_rect =
+            // { win->geometry.x, win->geometry.y, win->geometry.width, win->geometry.height };
+            // qwswl_update_surface(state, win, &window_rect, 1);
 
         qws_lock_unlock(&cl->lock, QWS_LOCK_REGIONEVENT);
         
@@ -257,10 +264,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             (qws_cmd_region_move_t *)incoming_pkt->simple_data;
         (void) cmd;
 
-        // qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
-        // assert(win);
-        // win->geometry.x += cmd->dx;
-        // win->geometry.y += cmd->dy;
+        qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
+        assert(win);
+        win->geometry.move_off_x += cmd->dx;
+        win->geometry.move_off_y += cmd->dy;
 
         break;
     }
@@ -270,7 +277,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
+        
         qwswl_destroy_window(state, win);
+
         break;
     }
 
@@ -282,34 +291,48 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         if (!win) {
             fprintf(stderr, "[qwswayland] Illegal window id %d from client %d\n",
                 cmd->window, cl->fd);
-            break;
+            assert(false);
         }
-        if (!win->parent) {
-            break;
-        }
-        assert(win->wl_subsurface);
 
         switch (cmd->altitude) {
             case QWS_ALTITUDE_STAYS_ON_TOP:
+                qwswl_stack_move_to_top(cl, win);
+                if (win->parent)
+                    wl_subsurface_place_above(win->wl_subsurface,
+                        win->parent->wl_surface);
+                break;
             case QWS_ALTITUDE_RAISE:
-                wl_subsurface_place_above(win->wl_subsurface, win->parent->wl_surface);
+                qwswl_stack_move_up(cl, win);
+                if (win->parent)
+                    wl_subsurface_place_above(win->wl_subsurface,
+                        win->parent->wl_surface);
                 break;
             case QWS_ALTITUDE_LOWER:
-                wl_subsurface_place_below(win->wl_subsurface, win->parent->wl_surface);
+                qwswl_stack_move_down(cl, win);
+                if (win->parent)
+                    wl_subsurface_place_below(win->wl_subsurface,
+                        win->parent->wl_surface);
                 break;
         }
 
         const qws_rect_t window_rect =
             { win->geometry.x, win->geometry.y, win->geometry.width, win->geometry.height };
-        qwswl_update_surface(state, win, &window_rect, 1);
+        if (win->wl_surface)
+            qwswl_update_surface(state, win, &window_rect, 1);
 
         break;
     }
 
     case QWS_CMD_REQUEST_FOCUS: {
-        qws_cmd_request_focus_t *cmd =
-            (qws_cmd_request_focus_t *)incoming_pkt->simple_data;
-        (void) cmd;
+        // qws_cmd_request_focus_t *cmd =
+        //     (qws_cmd_request_focus_t *)incoming_pkt->simple_data;
+
+        // qws_packet_t *evt = qws_make_focus_event(cmd->window, cmd->flag);
+        // assert(evt);
+
+        // qws_trace_packet(cl->client_id, evt, true);
+        // qws_write_packet(cl->fd, evt);
+        // qws_packet_free(evt);
 
         break;
     }
@@ -342,14 +365,12 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * TODO: implement a simple key-value store if needed. */
         if (type == QWS_CMD_GET_PROPERTY) {
             qws_cmd_get_property_t *cmd =
-                (qws_cmd_get_property_t *)incoming_pkt->simple_data;
-            if (cmd) {
-                /* Send empty reply */
-                qws_packet_t *reply = qws_make_property_reply(
-                    cmd->window, cmd->property, NULL, 0);
-                qws_trace_packet(cl->client_id, reply, true);
-                qws_write_packet(cl->fd, reply);
-            }
+            (qws_cmd_get_property_t *)incoming_pkt->simple_data;
+            /* Send empty reply */
+            qws_packet_t *reply = qws_make_property_reply(
+                cmd->window, cmd->property, NULL, 0);
+            qws_trace_packet(cl->client_id, reply, true);
+            qws_write_packet(cl->fd, reply);
         }
         break;
     }
@@ -393,6 +414,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     default:
         fprintf(stderr, "[qwswayland] Unhandled command 0x%x from client %d\n",
                 type, cl->client_id);
+        // assert(false);
         break;
     }
 

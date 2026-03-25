@@ -78,13 +78,16 @@ typedef struct qwswl_state {
     bool                 running;
     int                  qws_epoll_fd;
     int                  loop_epoll_fd;
+
+    /* Debug: draw a red border around each repaint rect */
+    bool                 debug_draw_rects;
 } qwswl_state_t;
 
 /* Initialize the proxy: connect to Wayland, set up QWS server socket,
  * and initialize epoll. */
 int  qwswl_init(qwswl_state_t *state, int qws_display,
                 int32_t width, int32_t height, int32_t depth,
-                qws_ipc_type_t ipc_type);
+                qws_ipc_type_t ipc_type, bool debug_draw_rects);
 
 /* Clean shutdown: destroy all Wayland objects, disconnect clients,
  * and remove the QWS server socket. */

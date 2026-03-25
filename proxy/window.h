@@ -59,18 +59,20 @@ typedef struct qwswl_window {
     /* Window properties */
     char                 *name;
     char                 *caption;
-    
-     bool                 always_on_top;
+    qws_window_flags_t   win_flags;
 } qwswl_window_t;
 
-/* Create a new Wayland-backed QWS window.
- * If win is non-NULL, the existing allocated slot is initialized in place.
- * is_first must be true for the first (toplevel) window of a client. */
-qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client, 
-    bool is_toplevel);
+/* Allocate data strctures to collect information about a QWS window.*/
+qwswl_window_t *qwswl_allocate_window(qwswl_client_t *client);
+/* Create a Wayland-backed QWS window.*/
+void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win, qwswl_window_t *parent,
+    qws_window_flags_t window_flags);
 
 /* Destroy a window and release all associated Wayland and shm resources. */
 void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win);
+
+/* Detach the client shm and hide the window by committing a NULL buffer. */
+void qwswl_hide_window(qwswl_state_t *state, qwswl_window_t *win);
 
 /* Set the xdg_toplevel title from the QWS region name/caption. */
 void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);

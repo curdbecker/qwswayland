@@ -36,8 +36,10 @@ static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
     qwswl_client_t *cl = win->client;
 
     /* Translate surface-local coords to QWS global coords */
-    pointer_data->gx = win->geometry.x + wl_fixed_to_int(sx);
-    pointer_data->gy = win->geometry.y + wl_fixed_to_int(sy);
+    pointer_data->gx = win->geometry.x + wl_fixed_to_int(sx) 
+        + win->geometry.move_off_x;
+    pointer_data->gy = win->geometry.y + wl_fixed_to_int(sy)
+        + win->geometry.move_off_y;
 
     // QWS_TRACE("qws_win=%d, surface_local=(%d,%d), global=(%d,%d)",
     //          win->qws_id,
@@ -90,6 +92,8 @@ static void pointer_leave(void *data, struct wl_pointer *ptr,
 
     qwswl_window_t *win = qwswl_surface_to_win(surface);
     assert(win);
+
+    QWS_TRACE("win %d", win->qws_id);
 }
 
 static void pointer_motion(void *data, struct wl_pointer *ptr,
@@ -128,9 +132,9 @@ static void pointer_button(void *data, struct wl_pointer *ptr,
 
     int32_t qt_state = btn_state ? qt_button : 0;
 
-    QWS_TRACE("btn=0x%x %s -> qws_win=%d qt_state=0x%x",
-             button, btn_state ? "press" : "release",
-             win->qws_id, qt_state);
+    // QWS_TRACE("btn=0x%x %s -> qws_win=%d qt_state=0x%x",
+    //          button, btn_state ? "press" : "release",
+    //          win->qws_id, qt_state);
 
     // assert(pointer_data->gx >= 0 && pointer_data->gy >= 0);
 
@@ -147,8 +151,32 @@ static void pointer_button(void *data, struct wl_pointer *ptr,
 static void pointer_axis(void *data, struct wl_pointer *ptr,
                            uint32_t time, uint32_t axis, wl_fixed_t value)
 {
-    /* TODO: translate scroll to QWS wheel events */
-    (void)data; (void)ptr; (void)time; (void)axis; (void)value;
+    (void)data;
+    if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
+        return;
+
+    qwswl_pointer_data_t *pointer_data = wl_pointer_get_user_data(ptr);
+    if (!pointer_data)
+        return;
+
+    qwswl_window_t *win = pointer_data->win;
+    qwswl_client_t *cl = win->client;
+
+    /* Wayland: positive = down; Qt delta: positive = up → negate.
+     * Scale: ~10 Wayland units per notch, 120 Qt units per notch. */
+    int32_t delta = -(int32_t)(wl_fixed_to_double(value) * 12.0);
+
+    // QWS_TRACE("axis=vertical value=%.2f delta=%d -> qws_win=%d",
+    //           wl_fixed_to_double(value), delta, win->qws_id);
+
+    qws_packet_t *evt = qws_make_mouse_event(
+        win->qws_id, pointer_data->gx, pointer_data->gy,
+        0, delta, (int32_t)time);
+    assert(evt);
+
+    qws_trace_packet(cl->client_id, evt, true);
+    qws_write_packet(cl->fd, evt);
+    qws_packet_free(evt);
 }
 
 static void pointer_frame(void *data, struct wl_pointer *ptr)
@@ -205,14 +233,14 @@ static void keyboard_enter(void *data, struct wl_keyboard *kbd,
 
     kbd_data->win = win;
 
-    QWS_TRACE("qws_win=%d", win->qws_id);
+    // QWS_TRACE("qws_win=%d", win->qws_id);
 
     wl_array_for_each(k, keys) {
         xkb_state_update_key(kbd_data->xkb_state, (*k) + 8, XKB_KEY_DOWN);
     }
-
+    
     qwswl_client_t *cl = win->client;
-    qws_packet_t *evt = qws_make_focus_event(win->qws_id, 1);
+    qws_packet_t *evt = qws_make_focus_event(win->qws_id, QWS_FOCUS_GAIN);
     assert(evt);
 
     qws_trace_packet(cl->client_id, evt, true);
@@ -228,12 +256,10 @@ static void keyboard_leave(void *data, struct wl_keyboard *kbd,
     qwswl_window_t *win = kbd_data->win;
     assert(kbd_data && win);
 
-    assert(surface);
-
-    QWS_TRACE("qws_win=%d", win->qws_id);
+    // QWS_TRACE("qws_win=%d", win->qws_id);
 
     qwswl_client_t *cl = win->client;
-    qws_packet_t *evt = qws_make_focus_event(win->qws_id, 0);
+    qws_packet_t *evt = qws_make_focus_event(win->qws_id, QWS_FOCUS_LOSE);
     assert(evt);
 
     qws_trace_packet(cl->client_id, evt, true);
@@ -280,8 +306,8 @@ static void keyboard_key(void *data, struct wl_keyboard *kbd,
     uint32_t utf32 = xkb_state_key_get_utf32(kbd_data->xkb_state, key + 8);
     UChar utf16[2];
 
-    QWS_TRACE("evdev=%u utf32=%u %s -> qws_win=%d", key, utf32,
-             is_press ? "press" : "release", win->qws_id);
+    // QWS_TRACE("evdev=%u utf32=%u %s -> qws_win=%d", key, utf32,
+    //          is_press ? "press" : "release", win->qws_id);
 
     xkb_state_update_key(kbd_data->xkb_state, key + 8,
         is_press ? XKB_KEY_DOWN : XKB_KEY_UP);

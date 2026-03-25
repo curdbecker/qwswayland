@@ -20,6 +20,9 @@
 
 #include <assert.h>
 
+#include "stc/common.h"
+#include "stc/sys/utility.h"
+
 #include "xdg-shell-client-protocol.h"
 
 
@@ -176,6 +179,25 @@ static int qwswl_create_or_update_buffer(qwswl_state_t *state, qwswl_window_t *w
     return 0;
 }
 
+static void position_window_relative_to_parent(qwswl_window_t *win)
+{
+    qwswl_window_t *parent = win->parent;
+    
+    assert(parent && win->wl_subsurface);
+
+    /* for lower-level windows the position of the subsurface is relative to
+     * the parent, so we need to compensate the offset between the two windows */
+    wl_subsurface_set_position(win->wl_subsurface, 
+        win->geometry.x - parent->geometry.x, 
+        win->geometry.y - parent->geometry.y);
+    
+    /* In order to avoid weird effects e.g. after the creation of an asynchronous
+     * subsurface, we have to manually trigger an update on the parent, so
+     * that our position relative to the parent surface is guranteed also
+     * to be known in the parent surface. */
+    wl_surface_commit(parent->wl_surface);
+}
+
 void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
                                 const qws_rect_t *rects, int32_t nrects)
 {
@@ -198,32 +220,46 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
     if (min_x1 == win->geometry.x && min_y1 == win->geometry.y &&
             width == win->geometry.width && height == win->geometry.height)
         return;
-    
-    QWS_TRACE("Updating Window %d geometry", win->qws_id);
 
     win->geometry.x = min_x1;
     win->geometry.y = min_y1;
     win->geometry.width = width;
     win->geometry.height = height;
 
-    if (win->parent) {
-        qwswl_window_t *parent = win->parent;
-        assert(win->wl_subsurface);
+    QWS_TRACE("Updating Window %d geometry", win->qws_id);
 
-        /* for lower-level windows the position of the subsurface is relative to
-         * the parent, so we need to compensate the offset between the two windows */
-        wl_subsurface_set_position(win->wl_subsurface, 
-            win->geometry.x - parent->geometry.x, 
-            win->geometry.y - parent->geometry.y);
+    if (win->parent)
+        position_window_relative_to_parent(win);
 
-        /* Avoids weird flickering or missing updates when subsurfaces 
-         * are not updated together with the parent surface. */
-        wl_subsurface_set_desync(win->wl_subsurface);
-    }
-    
     /* we need might to need to resize/create the buffer as well */
     qwswl_create_or_update_buffer(state, win, 
         win->geometry.width, win->geometry.height);
+}
+
+static void draw_debug_border(qwswl_window_t *win,
+                              int32_t x, int32_t y, int32_t w, int32_t h,
+                              uint32_t color)
+{
+    static const int32_t RIM = 2; /* border thickness in pixels */
+
+    if (w <= 0 || h <= 0) return;
+    uint32_t *pixels = (uint32_t *)win->server_shm.pixels;
+    int32_t  stride  = win->client_shm.width;
+
+    int32_t rim = c_min(RIM, c_min(w / 2, h / 2)); /* clamp for tiny rects */
+
+    for (int32_t t = 0; t < rim; t++) {
+        /* top and bottom bands */
+        for (int32_t px = x; px < x + w; px++) {
+            pixels[(y + t) * stride + px]           = color;
+            pixels[(y + h - 1 - t) * stride + px]   = color;
+        }
+        /* left and right bands */
+        for (int32_t py = y + t + 1; py < y + h - 1 - t; py++) {
+            pixels[py * stride + x + t]             = color;
+            pixels[py * stride + x + w - 1 - t]     = color;
+        }
+    }
 }
 
 void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
@@ -236,46 +272,55 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
     if (!src)
         return;
 
+    /* should not try to update surface if the window does not exist */
+    assert(win->wl_surface);
+
+    /* buffer sizes must be always equal */
     assert(win->client_shm.shm.size == win->server_shm.size);
 
     for (int i = 0; i < nrects; i++) {
         int32_t copy_x = rects[i].x1 - win->geometry.x;
         int32_t copy_y = rects[i].y1 - win->geometry.y;
-        int32_t copy_w = rects[i].x2 - rects[i].x1 + 1;
-        int32_t copy_h = rects[i].y2 - rects[i].y1 + 1;
+        int32_t copy_w = c_min(rects[i].x2 - rects[i].x1 + 1, win->client_shm.width);
+        int32_t copy_h = c_min(rects[i].y2 - rects[i].y1 + 1, win->client_shm.height);
 
-        /* sanitze bounds */
-        if (copy_x < 0)
-            copy_x = 0;
+        assert(copy_x >= 0 && copy_y >= 0);
+        assert(copy_w <= win->client_shm.width && copy_h <= win->client_shm.height);
 
-        if (copy_y < 0)
-            copy_y = 0;
-
-        if (copy_w > win->client_shm.width)
-            copy_w = win->client_shm.width;
-
-        uint32_t row_offset = copy_x * 4;
+        uint32_t row_offset = 0;// copy_x * 4;
         uint32_t row_bytes = win->client_shm.width * 4;
 
         /* TODO: format conversion (e.g. RGB16 → ARGB32) when client_shm.format != ARGB32 */
         for (int32_t j = 0; j < copy_h; j++) {
             uint32_t y = copy_y + j;
-            if (y >= win->client_shm.height)
+            if (y > win->client_shm.height)
                 break;
     
             uint32_t off = row_offset + (y * row_bytes);
             memcpy((uint8_t *) win->server_shm.pixels + off,
                    (const uint8_t *) src + off,
-                   copy_w * 4);
+                   row_bytes); //copy_w * 4);
         }
+
+        if (state->debug_draw_rects)
+            draw_debug_border(win, copy_x, copy_y, copy_w, copy_h, 0xFFFF0000);
 
         wl_surface_damage(win->wl_surface, copy_x, copy_y, copy_w, copy_h);
     }
 
-    wl_surface_attach(win->wl_surface, win->server_shm.buffer, 
-        0, 0);
-    wl_surface_commit(win->wl_surface);
+    if (state->debug_draw_rects)
+        draw_debug_border(win, 0, 0,
+                          win->geometry.width, win->geometry.height,
+                          0xFFFFFF00); /* yellow — full window geometry */
 
+    wl_surface_damage(win->wl_surface, 0, 0, win->geometry.width, win->geometry.height);
+
+    wl_surface_attach(win->wl_surface, win->server_shm.buffer, 0, 0);
+
+    if (win->parent)
+        position_window_relative_to_parent(win);
+
+    wl_surface_commit(win->wl_surface);
     wl_display_flush(state->wl_display);
 }
 
@@ -283,8 +328,7 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
  * Window management
  * ================================================================ */
 
-qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client, 
-    bool is_toplevel)
+qwswl_window_t *qwswl_allocate_window(qwswl_client_t *client)
 {
     int32_t qws_id = ++client->next_window_id;
 
@@ -293,13 +337,27 @@ qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client
 
     win->client = client;
     win->qws_id = qws_id;
+    win->win_flags = -1;
 
     qwswl_add_window_to_client(client, qws_id, win);
+
+    fprintf(stderr, "[qwswayland] Allocated window %d for client %d\n",
+            win->qws_id, client->client_id);
+
+    return win;
+}
+
+void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win, 
+    qwswl_window_t *parent, qws_window_flags_t window_flags)
+{
+    assert(win && win->wl_surface == NULL);
+
+    win->win_flags = window_flags;
 
     /* Create Wayland surface */
     win->wl_surface = wl_compositor_create_surface(state->wl_compositor);
 
-    if (is_toplevel) {
+    if (QWS_IS_TOPLEVEL_TYPE(window_flags)) {
         /* Toplevel window: wrap in xdg_surface + xdg_toplevel.
          * Listeners must be added before the initial commit so we don't
          * miss the configure event that the compositor sends in response. */
@@ -311,17 +369,28 @@ qwswl_window_t *qwswl_create_window(qwswl_state_t *state, qwswl_client_t *client
     } else {
         /* Child window: attach as a subsurface of the root toplevel.
          * No xdg-shell role or configure handshake needed. */
-        win->parent = qwswl_lookup_window_on_client(client, 1);
+        win->parent = parent;
         win->wl_subsurface = wl_subcompositor_get_subsurface(
             state->wl_subcompositor, win->wl_surface, win->parent->wl_surface);
+
+        /* Avoids weird flickering or missing updates when subsurfaces 
+         * are not updated together with the parent surface. */
+        wl_subsurface_set_desync(win->wl_subsurface);
+
+        /* Make sure that the position of the subsurface is already set 
+         * as soon it might get displayed or we might see it jumping around. */
+        position_window_relative_to_parent(win);
     }
 
     wl_surface_set_user_data(win->wl_surface, (void *) win);
     wl_surface_commit(win->wl_surface);
 
+    /* window should have been fully created */
+    wl_display_flush(state->wl_display);
+    wl_display_roundtrip(state->wl_display);
+
     fprintf(stderr, "[qwswayland] Created window %d for client %d\n",
-            win->qws_id, client->client_id);
-    return win;
+            win->qws_id, win->client->client_id);
 }
 
 void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
@@ -337,6 +406,9 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
 
     if (win->xdg_surface)
         xdg_surface_destroy(win->xdg_surface);
+
+    if (win->wl_subsurface)
+        wl_subsurface_destroy(win->wl_subsurface);
 
     if (win->wl_surface)
         wl_surface_destroy(win->wl_surface);
@@ -358,6 +430,27 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
     qwswl_remove_window_from_client(win->client, win->qws_id);
 
     free(win);
+}
+
+void qwswl_hide_window(qwswl_state_t *state, qwswl_window_t *win)
+{
+    qwswl_detach_client_shm(win);
+
+    win->geometry.x = -1;
+    win->geometry.y = -1;
+    win->geometry.height = -1;
+    win->geometry.width = -1;
+
+    win->geometry.move_off_x = 0;
+    win->geometry.move_off_y = 0;
+
+    /* The client might decide to hide a window that we didn't even show yet,
+     * so we might not even have a surface. There is nothing to do here then. */
+    if (win->wl_surface) {
+        wl_surface_attach(win->wl_surface, NULL, 0, 0);
+        wl_surface_commit(win->wl_surface);
+        wl_display_flush(state->wl_display);
+    }
 }
 
 void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption)

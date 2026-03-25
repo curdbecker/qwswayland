@@ -163,7 +163,10 @@ enum qws_image_format {
     QWS_FORMAT_NFORMATS                 = 16,  /* sentinel */
 };
 
+
 /* Qt::WindowType values (from qnamespace.h, Qt 4.8) */
+typedef int32_t qws_window_flags_t;
+
 #define QWS_WINDOW_TYPE_MASK            0x000000ffu
 
 #define QWS_WT_WIDGET                   0x00000000u
@@ -233,6 +236,8 @@ typedef struct {
 typedef struct {
     int32_t x;
     int32_t y;
+    int32_t move_off_x;
+    int32_t move_off_y;
     int32_t width;
     int32_t height;
 } qwswl_geometry_t;
@@ -431,10 +436,15 @@ typedef struct {
     int32_t is_fixed;
 } qws_cmd_change_altitude_t;
  
+typedef enum {
+    QWS_FOCUS_LOSE = 0,
+    QWS_FOCUS_GAIN = 1,
+} qws_focus_flag_t;
+ 
 /* QWS_CMD_REQUEST_FOCUS */
 typedef struct {
     int32_t window;
-    int32_t flag;       /* 0=set, 1=clear (?) */
+    qws_focus_flag_t flag;
 } qws_cmd_request_focus_t;
  
 /* QWS_CMD_SET_OPACITY */
@@ -502,7 +512,7 @@ typedef struct {
  * rawData = array of qws_rect_t */
 typedef struct {
     int32_t window;
-    int32_t window_flags;
+    qws_window_flags_t window_flags;
     int32_t opaque;
     int32_t nrectangles;
 } qws_cmd_repaint_region_t;
@@ -661,6 +671,9 @@ int qws_socket_path(int display, char *buf, size_t buflen);
  
 /* Accept a QWS client connection. Returns client fd or -1. */
 int qws_server_accept(int server_fd);
+
+/* Connect to an existing QWS server socket as a client. Returns fd or -1. */
+int qws_client_connect(const char *socket_path);
  
 /* Convenience: write a complete packet to fd. Returns 0 on success. */
 int qws_write_packet(int fd, const qws_packet_t *pkt);
@@ -706,8 +719,8 @@ const char *qws_surface_flag_name(int flag);
 const char *qws_im_update_type_name(int type);
 const char *qws_altitude_name(int altitude);
 const char *qws_window_type_str(uint32_t flags);
+const char *qws_focus_flag_str(qws_focus_flag_t flag);
 bool qws_is_synchronous_commmand(int type);
-
 
 #ifdef __cplusplus
 }

@@ -48,7 +48,7 @@ qws_packet_t *qws_make_key_event(int32_t window,
                                    bool is_press, bool auto_repeat);
 
 /* Build a Focus event. */
-qws_packet_t *qws_make_focus_event(int32_t window, int32_t get_focus);
+qws_packet_t *qws_make_focus_event(int32_t window, qws_focus_flag_t flag);
 
 /* Build a MaxWindowRect event. */
 qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1, 

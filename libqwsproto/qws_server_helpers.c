@@ -109,7 +109,7 @@ qws_packet_t *qws_make_key_event(int32_t window,
     return pkt;
 }
 
-qws_packet_t *qws_make_focus_event(int32_t window, int32_t get_focus)
+qws_packet_t *qws_make_focus_event(int32_t window, qws_focus_flag_t flag)
 {
     qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_FOCUS,
                                            sizeof(qws_evt_focus_t), 0);
@@ -117,7 +117,7 @@ qws_packet_t *qws_make_focus_event(int32_t window, int32_t get_focus)
 
     qws_evt_focus_t *d = (qws_evt_focus_t *)pkt->simple_data;
     d->window = window;
-    d->get_focus = get_focus;
+    d->get_focus = flag;
 
     return pkt;
 }

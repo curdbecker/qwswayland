@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <alloca.h>
 #include <string.h>
+#include <strings.h>
 #include <ctype.h>
 #include <time.h>
 #include <sys/time.h>
@@ -53,6 +54,44 @@ void qws_trace_get_exclude_mask(uint64_t *cmd_mask, uint64_t *evt_mask)
 {
     if (cmd_mask) *cmd_mask = g_exclude_cmd_mask;
     if (evt_mask) *evt_mask = g_exclude_evt_mask;
+}
+
+void qws_trace_parse_exclude_list(const char *list,
+                                   uint64_t *cmd_mask, uint64_t *evt_mask)
+{
+    char *buf = strdup(list);
+    if (!buf)
+        return;
+
+    char *tok = strtok(buf, ",");
+    while (tok) {
+        int check_cmd = 1, check_evt = 1;
+        const char *name = tok;
+
+        if (strncmp(tok, "cmd:", 4) == 0) { name = tok + 4; check_evt = 0; }
+        else if (strncmp(tok, "evt:", 4) == 0) { name = tok + 4; check_cmd = 0; }
+
+        int matched = 0;
+        for (int i = 0; i < 64; i++) {
+            if (check_cmd && strcasecmp(qws_command_type_name(i), name) == 0) {
+                *cmd_mask |= (1ULL << i);
+                matched = 1;
+            }
+            if (check_evt && strcasecmp(qws_event_type_name(i), name) == 0) {
+                *evt_mask |= (1ULL << i);
+                matched = 1;
+            }
+        }
+        if (!matched) {
+            fprintf(stderr, "Warning: unknown packet type name '%s' in --exclude list\n", tok);
+            free(buf);
+            exit(1);
+        }
+
+        tok = strtok(NULL, ",");
+    }
+
+    free(buf);
 }
 
 /* ================================================================
@@ -459,8 +498,8 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
     case QWS_CMD_REQUEST_FOCUS: {
         if (simple_len >= (int32_t)sizeof(qws_cmd_request_focus_t)) {
             const qws_cmd_request_focus_t *d = simple_data;
-            fprintf(fp, "      window=%d, flag=%d\n",
-                    d->window, d->flag);
+            fprintf(fp, "      window=%d %s\n",
+                    d->window, qws_focus_flag_str(d->flag));
         }
         break;
     }

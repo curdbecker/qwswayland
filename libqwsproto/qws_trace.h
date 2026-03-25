@@ -57,6 +57,14 @@ void qws_trace_set_output(FILE *fp);
 void qws_trace_set_exclude_mask(uint64_t cmd_mask, uint64_t evt_mask);
 void qws_trace_get_exclude_mask(uint64_t *cmd_mask, uint64_t *evt_mask);
 
+/* Parse a comma-separated exclude list into cmd/evt bitmasks.
+ * Each token may be prefixed with "cmd:" or "evt:" to restrict the direction;
+ * unprefixed tokens are matched against both.  OR's results into *cmd_mask
+ * and *evt_mask (initialise them to 0 before the first call).
+ * Prints a warning and calls exit(1) on an unrecognised name. */
+void qws_trace_parse_exclude_list(const char *list,
+                                   uint64_t *cmd_mask, uint64_t *evt_mask);
+
 /* -----------------------------------------------------------
  * Packet tracing
  * ----------------------------------------------------------- */

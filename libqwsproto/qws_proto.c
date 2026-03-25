@@ -386,6 +386,27 @@ int qws_server_accept(int server_fd)
     return accept(server_fd, (struct sockaddr *)&addr, &len);
 }
  
+int qws_client_connect(const char *socket_path)
+{
+    if (!socket_path)
+        return -1;
+
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0)
+        return -1;
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return -1;
+    }
+    return fd;
+}
+
 int qws_write_packet(int fd, const qws_packet_t *pkt)
 {
     size_t total = qws_packet_wire_size(pkt);
@@ -683,5 +704,14 @@ const char *qws_window_type_str(uint32_t flags)
         case QWS_WT_DESKTOP:      return "Desktop";
         case QWS_WT_SUBWINDOW:    return "SubWindow";
         default:                  return "Unknown";
+    }
+}
+
+const char *qws_focus_flag_str(qws_focus_flag_t flag)
+{
+    switch (flag) {
+        case QWS_FOCUS_LOSE: return "Lose";
+        case QWS_FOCUS_GAIN: return "Gain";
+        default:             return "Invalid";
     }
 }

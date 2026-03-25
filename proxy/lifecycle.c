@@ -156,10 +156,11 @@ static const struct wl_registry_listener registry_listener = {
 
 int qwswl_init(qwswl_state_t *state, int qws_display,
                 int32_t width, int32_t height, int32_t depth,
-                qws_ipc_type_t ipc_type)
+                qws_ipc_type_t ipc_type, bool debug_draw_rects)
 {
     memset(state, 0, sizeof(*state));
     state->ipc_type = ipc_type;
+    state->debug_draw_rects = debug_draw_rects;
     state->qws_server_fd = -1;
     state->qws_epoll_fd = -1;
     state->screen_width = width;
@@ -396,9 +397,9 @@ void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl) {
     fprintf(stderr, "[qwswayland] Client %d disconnected\n",
         cl->client_id);
     
-    qwswl_disconnect_client_no_hashmap(state, cl);
-
     assert(qwswl_client_map_t_erase(&state->client_map, cl->client_id));
+
+    qwswl_disconnect_client_no_hashmap(state, cl);
 }
 
 int qwswl_run(qwswl_state_t *state)
@@ -509,6 +510,8 @@ int qwswl_run(qwswl_state_t *state)
                     (qwswl_client_t *) qws_events[i].data.ptr);
             }
         }
+
+        wl_display_flush(state->wl_display);
     }
 
     return 0;
