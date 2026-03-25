@@ -1,0 +1,118 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "cppdbg",
+            "name": "qwswayland",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
+            "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
+            "args": ["-vv", "-x", "Mouse,SelectCursor", "-D"],
+            // "args": [],
+            "environment": [{ "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" }],
+            "MIMode": "gdb",
+            "envFile": "${workspaceFolder}/${config:mesonbuild.buildFolder}/meson-vscode.env",
+            "preLaunchTask": "Meson: Build all targets",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "example-client",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib"
+                }
+            ],
+            "preLaunchTask": "Meson: Build all targets",
+            "cwd": "/tmp",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example"
+        },
+
+        // --- Trace proxy setup (3 configs + compound below) ---
+
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "trace: 1. QWS Server",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example",
+            "args": ["-qws", "-display", "VNC:size=1024x768:depth=32:1"],
+            "cwd": "/tmp",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib"
+                }
+            ],
+            "preLaunchTask": "Meson: Build all targets",
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "trace: 2. Proxy",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/trace_proxy/qws_trace_proxy",
+            "args": ["-l", "2", "-s", "1", "-vvv"],
+            "cwd": "${workspaceFolder}",
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "trace: 3. QWS Client",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example",
+            "args": ["-display", ":2"],
+            "cwd": "/tmp",
+            "environment": [
+                {
+                    "name": "LD_LIBRARY_PATH",
+                    "value": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib"
+                },
+            ],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        }
+    ],
+     "compounds": [
+        {
+          "name": "qwswayland + example-client",
+          "configurations": ["qwswayland", "example-client"],
+          "stopAll": true
+        },
+        {
+          "name": "trace: Full Setup (debug)",
+          "configurations": ["trace: 1. QWS Server", "trace: 2. Proxy", "trace: 3. QWS Client"],
+          "stopAll": true
+        }
+    ],
+}

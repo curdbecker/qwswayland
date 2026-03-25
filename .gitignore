@@ -34,10 +34,8 @@ __MACOSX/
 ._*
 
 # Editor/IDE
-.vscode/
 .idea/
 *.swp
 *.swo
 *~
 .clangd/
-compile_commands.json

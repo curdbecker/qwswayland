@@ -1,0 +1,110 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        // ---------------------------------------------------------------
+        // Build helper (shared by the server task below)
+        // ---------------------------------------------------------------
+        {
+            "label": "trace: Build",
+            "type": "shell",
+            "command": "ninja -C ${workspaceFolder}/builddir",
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "qws-trace-build"
+            },
+            "problemMatcher": ["$gcc"]
+        },
+
+        // ---------------------------------------------------------------
+        // trace: 1. QWS Server
+        //   Builds first, then starts the example app as the QWS server
+        //   on display 0. Socket appears at /tmp/qtembedded-0/QtEmbedded-0.
+        // ---------------------------------------------------------------
+        {
+            "label": "trace: 1. QWS Server",
+            "type": "shell",
+            "command": "${workspaceFolder}/builddir/example/example -qws -display VNC:size=1024x768:depth=32:1",
+            "options": {
+                "cwd": "/tmp",
+                "env": {
+                    "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib"
+                }
+            },
+            "dependsOn": "trace: Build",
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "qws-trace"
+            },
+            "problemMatcher": []
+        },
+
+        // ---------------------------------------------------------------
+        // trace: 2. Proxy
+        //   Waits for the server socket, then starts the trace proxy
+        //   listening on display 1 and forwarding to display 0.
+        // ---------------------------------------------------------------
+        {
+            "label": "trace: 2. Proxy",
+            "type": "shell",
+            "command": "until [ -S /tmp/qtembedded-0/QtEmbedded-0 ]; do sleep 0.2; done && ${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -s 1 -vvv",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "qws-trace"
+            },
+            "problemMatcher": []
+        },
+
+        // ---------------------------------------------------------------
+        // trace: 3. QWS Client
+        //   Waits for the proxy socket, then starts the example app as a
+        //   QWS client connecting via the trace proxy on display 1.
+        // ---------------------------------------------------------------
+        {
+            "label": "trace: 3. QWS Client",
+            "type": "shell",
+            "command": "until [ -S /tmp/qtembedded-1/QtEmbedded-1 ]; do sleep 0.2; done && ${workspaceFolder}/builddir/subprojects/example/example",
+            "options": {
+                "cwd": "/tmp",
+                "env": {
+                    "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib",
+                    "QWS_DISPLAY": ":2"
+                }
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "qws-trace"
+            },
+            "problemMatcher": []
+        },
+
+        // ---------------------------------------------------------------
+        // trace: Full Setup  (main entry point)
+        //   Launches all three tasks in parallel. Tasks 2 and 3 use
+        //   socket-wait loops so ordering is handled automatically.
+        //   Run via: Ctrl+Shift+P → Tasks: Run Task → trace: Full Setup
+        //
+        //   To view panes side by side: right-click a terminal tab
+        //   → "Split Terminal", or drag tabs within the Terminal panel.
+        // ---------------------------------------------------------------
+        {
+            "label": "trace: Full Setup",
+            "dependsOn": [
+                "trace: 1. QWS Server",
+                "trace: 2. Proxy",
+                "trace: 3. QWS Client"
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        }
+    ]
+}

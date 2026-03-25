@@ -1,0 +1,8 @@
+{
+    "mesonbuild.configureOnOpen": true,
+    "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
+    "C_Cpp.default.compileCommands": "/microscope/qwswayland/builddir/compile_commands.json",
+    "mesonbuild.configureEnvironment": {
+        "PKG_CONFIG_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib/pkgconfig"
+    }
+}

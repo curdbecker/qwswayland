@@ -1,2 +1,8 @@
 option('build_proxy', type: 'boolean', value: true,
   description: 'Build the qwswayland proxy executable')
+
+option('build_example', type: 'boolean', value: true,
+  description: 'Build the Qt 4.8 QWS example')
+
+option('build_trace_proxy', type: 'boolean', value: true,
+  description: 'Build the qws_trace_proxy debugging tool')
