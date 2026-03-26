@@ -13,6 +13,7 @@
 
 #include "qws_proto.h"
 #include "qws_lock.h"
+#include "qws_pcap.h"
 
 #include <stdbool.h>
 
@@ -34,6 +35,8 @@ typedef struct {
 
     char upstream_path[256];    /* upstream QWS server socket path */
     int  client_id;           /* incremented each session, used in trace labels */
+
+    qws_pcap_writer_t *pcap_writer;  /* NULL if -w not given */
 
     bool running;
 } qwstrace_state_t;

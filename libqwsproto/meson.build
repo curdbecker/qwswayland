@@ -6,6 +6,7 @@ endif
 
 qwsproto_sources = files(
   'qws_lock.c',
+  'qws_pcap.c',
   'qws_proto.c',
   'qws_server_helpers.c',
   'qws_trace.c',
@@ -13,6 +14,7 @@ qwsproto_sources = files(
 
 qwsproto_deps = [
   dependency('threads'),
+  dependency('libpcap'),
   cc.find_library('rt', required: false),
 ]
 
@@ -25,9 +27,10 @@ qwsproto_lib = static_library('qwsproto',
 qwsproto_dep = declare_dependency(
   link_with: qwsproto_lib,
   include_directories: include_directories('.'),
+  dependencies: qwsproto_deps,
 )
 
 install_headers(
-  'qws_lock.h', 'qws_proto.h', 'qws_server_helpers.h', 'qws_trace.h',
+  'qws_lock.h', 'qws_pcap.h', 'qws_proto.h', 'qws_server_helpers.h', 'qws_trace.h',
   subdir: 'qwsproto',
 )

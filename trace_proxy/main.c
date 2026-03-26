@@ -40,6 +40,9 @@ static void usage(const char *prog)
         "                        -v    one-line per packet (type + sizes)\n"
         "                        -vv   decode struct fields\n"
         "                        -vvv  full hex dump of all payloads\n"
+        "  -w, --write FILE    Write captured packets to a pcapng file.\n"
+        "                        Each frame is one QWS message (DLT_USER0).\n"
+        "                        Open with Wireshark + wireshark/qws_dissector.lua.\n"
         "  -x, --exclude LIST  Comma-separated packet type names to suppress.\n"
         "                        Prefix with 'cmd:' or 'evt:' to restrict direction.\n"
         "                        Example: -x mouse,key,cmd:Region\n"
@@ -72,21 +75,25 @@ int main(int argc, char *argv[])
     uint64_t exclude_cmd_mask = 0;
     uint64_t exclude_evt_mask = 0;
 
+    const char *pcap_path = NULL;
+
     static struct option long_opts[] = {
         { "listen",      required_argument, 0, 'l' },
-        { "upstream",      required_argument, 0, 'u' },
+        { "upstream",    required_argument, 0, 'u' },
         { "verbose",     no_argument,       0, 'v' },
+        { "write",       required_argument, 0, 'w' },
         { "exclude",     required_argument, 0, 'x' },
         { "help",        no_argument,       0, 'H' },
         { 0, 0, 0, 0 }
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "l:u:vx:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "l:u:vw:x:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'l': listen_display = atoi(optarg); break;
         case 'u': upstream_display = atoi(optarg); break;
         case 'v': verbose++; break;
+        case 'w': pcap_path = optarg; break;
         case 'x': qws_trace_parse_exclude_list(optarg, &exclude_cmd_mask, &exclude_evt_mask); break;
         case 'H':
         default:
@@ -125,6 +132,16 @@ int main(int argc, char *argv[])
     if (qwstrace_init(&g_state, listen_path, upstream_path) != 0) {
         fprintf(stderr, "Initialization failed. Exiting.\n");
         return 1;
+    }
+
+    if (pcap_path) {
+        g_state.pcap_writer = qws_pcap_writer_open(pcap_path);
+        if (!g_state.pcap_writer) {
+            fprintf(stderr, "Failed to open pcap output file: %s\n", pcap_path);
+            qwstrace_shutdown(&g_state);
+            return 1;
+        }
+        fprintf(stderr, "qws_trace_proxy: writing capture to %s\n", pcap_path);
     }
 
     int ret = qwstrace_run(&g_state);

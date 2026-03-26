@@ -1,0 +1,645 @@
+--[[
+ qws_dissector.lua — Wireshark Lua dissector for QWS (Qt Window System) protocol
+
+ Capture file format: DLT_USER0 (link type 147)
+ Each frame = one complete QWS message, produced by:
+   qws_trace_proxy -w <file.pcapng>
+
+ Install:
+   cp wireshark/qws_dissector.lua ~/.config/wireshark/plugins/
+   Reload Wireshark (Ctrl-Shift-L) or restart.
+
+ Frame layout (written by libqwsproto/qws_pcap.c):
+   Offset  Size  Field
+      0      1   direction  (0=client→server / command, 1=server→client / event)
+      1      1   client_id  (session number, starts at 1)
+      2      2   reserved   (zeroed)
+      4      4   type       (int32 LE — QWS_CMD_* or QWS_EVT_*)
+      8      4   raw_len    (int32 LE — rawData byte count)
+     12    var   simpleData (fixed per-type struct)
+   12+s    var   rawData    (raw_len bytes)
+
+ Address convention (enables ip.addr filters and the Conversations dialog):
+   Server:   10.0.0.0
+   Client N: 10.0.0.N   (N = client_id from capture header)
+--]]
+
+local qws_proto = Proto("qws", "Qt Window System Protocol")
+
+-- -----------------------------------------------------------------------
+-- Image format name table (QImage::Format, Qt 4.8)
+-- -----------------------------------------------------------------------
+
+local IMAGE_FORMAT_NAMES = {
+    [0]  = "Invalid",       [1]  = "Mono",            [2]  = "MonoLSB",
+    [3]  = "Indexed8",      [4]  = "RGB32",            [5]  = "ARGB32",
+    [6]  = "ARGB32_Pre",    [7]  = "RGB16",            [8]  = "ARGB8565_Pre",
+    [9]  = "RGB666",        [10] = "ARGB6666_Pre",     [11] = "RGB555",
+    [12] = "ARGB8555_Pre",  [13] = "RGB888",           [14] = "RGB444",
+    [15] = "ARGB4444_Pre",
+}
+
+-- -----------------------------------------------------------------------
+-- Field declarations
+-- -----------------------------------------------------------------------
+
+local f = qws_proto.fields
+
+-- Capture header
+f.direction   = ProtoField.uint8 ("qws.direction",   "Direction",  base.DEC,
+                  {[0]="Command (C→S)", [1]="Event (S→C)"})
+f.client_id   = ProtoField.uint8 ("qws.client_id",   "Client ID",  base.DEC)
+f.reserved    = ProtoField.uint16("qws.reserved",    "Reserved",   base.HEX)
+
+-- QWS wire header
+f.msg_type    = ProtoField.int32 ("qws.type",        "Type",       base.DEC)
+f.raw_len     = ProtoField.int32 ("qws.raw_len",     "Raw Length", base.DEC)
+
+-- Generic fallback blobs
+f.simple_data = ProtoField.bytes ("qws.simple_data", "Simple Data")
+f.raw_data    = ProtoField.bytes ("qws.raw_data",    "Raw Data")
+
+-- Shared per-type integer fields
+f.window        = ProtoField.int32 ("qws.window",       "Window ID",       base.DEC)
+f.count         = ProtoField.int32 ("qws.count",        "Count",           base.DEC)
+f.nrects        = ProtoField.int32 ("qws.nrects",       "Num Rectangles",  base.DEC)
+f.property      = ProtoField.int32 ("qws.property",     "Property ID",     base.DEC)
+f.grab          = ProtoField.int32 ("qws.grab",         "Grab",            base.DEC,
+                    {[0]="Release", [1]="Grab"})
+f.operation     = ProtoField.int32 ("qws.operation",    "Operation",       base.DEC)
+
+-- Rectangle fields (reused per-rect in every decoded rect array)
+f.rect_x1       = ProtoField.int32("qws.rect.x1",       "x1",              base.DEC)
+f.rect_y1       = ProtoField.int32("qws.rect.y1",       "y1",              base.DEC)
+f.rect_x2       = ProtoField.int32("qws.rect.x2",       "x2",              base.DEC)
+f.rect_y2       = ProtoField.int32("qws.rect.y2",       "y2",              base.DEC)
+
+-- String rawData fields
+f.app_name       = ProtoField.string("qws.app_name",       "App Name")
+f.display_spec   = ProtoField.string("qws.display_spec",   "Display Spec")
+f.window_name    = ProtoField.string("qws.window_name",    "Window Name")
+f.window_caption = ProtoField.string("qws.window_caption", "Window Caption")
+f.surface_key    = ProtoField.string("qws.surface_key",    "Surface Key")
+f.font_name      = ProtoField.string("qws.font_name",      "Font Name")
+f.qcop_channel   = ProtoField.string("qws.qcop_channel",   "QCop Channel")
+f.qcop_message   = ProtoField.string("qws.qcop_message",   "QCop Message")
+
+-- Surface shm data fields
+f.shm_mem_id    = ProtoField.int32 ("qws.shm.mem_id",   "SHM mem_id",    base.DEC)
+f.shm_width     = ProtoField.int32 ("qws.shm.width",    "Width",         base.DEC)
+f.shm_height    = ProtoField.int32 ("qws.shm.height",   "Height",        base.DEC)
+f.shm_lock_id   = ProtoField.int32 ("qws.shm.lock_id",  "Lock ID",       base.DEC)
+f.shm_format    = ProtoField.int32 ("qws.shm.format",   "Format",        base.DEC,
+                    IMAGE_FORMAT_NAMES)
+f.shm_flags     = ProtoField.uint32("qws.shm.flags",    "Surface Flags", base.HEX)
+
+-- Connected event
+f.conn_len      = ProtoField.int32 ("qws.conn_len",     "Display Spec Len", base.DEC)
+f.conn_clientid = ProtoField.int32 ("qws.conn.clientid","Client ID",        base.DEC)
+f.shm_id        = ProtoField.int32 ("qws.shm_id",       "SHM ID",           base.DEC)
+
+-- Creation event
+f.object_id     = ProtoField.int32 ("qws.object_id",    "First Object ID",  base.DEC)
+
+-- Region event
+f.region_type   = ProtoField.uint8 ("qws.region_type",  "Region Type",      base.DEC,
+                    {[0]="Allocation", [1]="DirectPaint"})
+
+-- Mouse event
+f.x_root        = ProtoField.int32 ("qws.x_root",       "X (root)",         base.DEC)
+f.y_root        = ProtoField.int32 ("qws.y_root",       "Y (root)",         base.DEC)
+f.mouse_state   = ProtoField.uint32("qws.state",        "Button/Modifier State", base.HEX)
+f.delta         = ProtoField.int32 ("qws.delta",        "Wheel Delta",      base.DEC)
+f.time_ms       = ProtoField.uint32("qws.time_ms",      "Timestamp (ms)",   base.DEC)
+
+-- Key event
+f.keycode       = ProtoField.uint32("qws.keycode",      "Qt::Key",          base.HEX)
+f.modifiers     = ProtoField.uint32("qws.modifiers",    "Modifiers",        base.HEX)
+f.unicode       = ProtoField.uint16("qws.unicode",      "Unicode",          base.HEX)
+f.key_flags     = ProtoField.uint16("qws.key_flags",    "Flags",            base.HEX)
+
+-- Focus event / RequestFocus command
+f.focus_flag    = ProtoField.int32 ("qws.focus_flag",   "Focus",            base.DEC,
+                    {[0]="Lost", [1]="Gained"})
+
+-- Identify command
+f.id_len        = ProtoField.int32 ("qws.id_len",       "App Name Len (bytes)", base.DEC)
+f.id_lock       = ProtoField.int32 ("qws.id_lock",      "Lock ID",          base.DEC)
+
+-- RegionName command
+f.name_len      = ProtoField.int32 ("qws.name_len",     "Name Len (bytes)", base.DEC)
+f.caption_len   = ProtoField.int32 ("qws.caption_len",  "Caption Len (bytes)", base.DEC)
+
+-- RepaintRegion command
+f.window_flags  = ProtoField.uint32("qws.window_flags", "Window Flags",     base.HEX)
+f.opaque        = ProtoField.int32 ("qws.opaque",       "Opaque",           base.DEC)
+
+-- ChangeAltitude command
+f.altitude      = ProtoField.int32 ("qws.altitude",     "Altitude",         base.DEC,
+                    {[-1]="Lower", [0]="Raise", [1]="StaysOnTop"})
+f.is_fixed      = ProtoField.int32 ("qws.is_fixed",     "Is Fixed",         base.DEC)
+
+-- SetOpacity command
+f.opacity       = ProtoField.int32 ("qws.opacity",      "Opacity (0-255)",  base.DEC)
+
+-- Region command
+f.surf_key_len  = ProtoField.int32 ("qws.surf_key_len", "Surface Key Len",  base.DEC)
+f.surf_data_len = ProtoField.int32 ("qws.surf_data_len","Surface Data Len", base.DEC)
+
+-- RegionMove command
+f.dx            = ProtoField.int32 ("qws.dx",           "dX",               base.DEC)
+f.dy            = ProtoField.int32 ("qws.dy",           "dY",               base.DEC)
+
+-- SetProperty command
+f.prop_mode     = ProtoField.int32 ("qws.prop_mode",    "Mode",             base.DEC,
+                    {[0]="Replace", [1]="Append", [2]="Prepend"})
+
+-- PropertyNotify event
+f.prop_state    = ProtoField.int32 ("qws.prop_state",   "State",            base.DEC,
+                    {[0]="Changed", [1]="Deleted"})
+
+-- PropertyReply event
+f.prop_len      = ProtoField.int32 ("qws.prop_len",     "Value Length",     base.DEC)
+
+-- DefineCursor command
+f.cur_width     = ProtoField.int32 ("qws.cur_width",    "Width",            base.DEC)
+f.cur_height    = ProtoField.int32 ("qws.cur_height",   "Height",           base.DEC)
+f.cur_hot_x     = ProtoField.int32 ("qws.cur_hot_x",    "Hot X",            base.DEC)
+f.cur_hot_y     = ProtoField.int32 ("qws.cur_hot_y",    "Hot Y",            base.DEC)
+f.cur_id        = ProtoField.int32 ("qws.cur_id",       "Cursor ID",        base.DEC)
+f.cursor_id     = ProtoField.int32 ("qws.cursor_id",    "Cursor ID",        base.DEC)
+
+-- QCopSend command
+f.channel_len   = ProtoField.int32 ("qws.channel_len",  "Channel Len",      base.DEC)
+f.message_len   = ProtoField.int32 ("qws.message_len",  "Message Len",      base.DEC)
+f.data_len      = ProtoField.int32 ("qws.data_len",     "Data Len",         base.DEC)
+
+-- IMUpdate command
+f.im_type       = ProtoField.int32 ("qws.im_type",      "IM Update Type",   base.DEC,
+                    {[0]="FocusIn", [1]="FocusOut", [2]="Update", [3]="Dictation"})
+f.widget_id     = ProtoField.int32 ("qws.widget_id",    "Widget ID",        base.DEC)
+
+-- -----------------------------------------------------------------------
+-- Type name tables — mirror qws_proto.h enums
+-- -----------------------------------------------------------------------
+
+local CMD_NAMES = {
+    [0]  = "Unknown",        [1]  = "Create",          [2]  = "Shutdown",
+    [3]  = "Region",         [4]  = "RegionMove",      [5]  = "RegionDestroy",
+    [6]  = "SetProperty",    [7]  = "AddProperty",     [8]  = "RemoveProperty",
+    [9]  = "GetProperty",    [10] = "SetSelectionOwner",[11] = "ConvertSelection",
+    [12] = "RequestFocus",   [13] = "ChangeAltitude",  [14] = "SetOpacity",
+    [15] = "DefineCursor",   [16] = "SelectCursor",    [17] = "PositionCursor",
+    [18] = "GrabMouse",      [19] = "PlaySound",       [20] = "QCopRegister",
+    [21] = "QCopSend",       [22] = "RegionName",      [23] = "Identify",
+    [24] = "GrabKeyboard",   [25] = "RepaintRegion",   [26] = "IMMouse",
+    [27] = "IMUpdate",       [28] = "IMResponse",      [29] = "Embed",
+    [30] = "Font",           [31] = "ScreenTransform",
+}
+
+local EVT_NAMES = {
+    [0]  = "NoEvent",        [1]  = "Connected",       [2]  = "Mouse",
+    [3]  = "Focus",          [4]  = "Key",             [5]  = "Region",
+    [6]  = "Creation",       [7]  = "PropertyNotify",  [8]  = "PropertyReply",
+    [9]  = "SelectionClear", [10] = "SelectionRequest",[11] = "SelectionNotify",
+    [12] = "MaxWindowRect",  [13] = "QCopMessage",     [14] = "WindowOperation",
+    [15] = "IMEvent",        [16] = "IMQuery",         [17] = "IMInit",
+    [18] = "Embed",          [19] = "Font",            [20] = "ScreenTransform",
+}
+
+-- -----------------------------------------------------------------------
+-- Simple data byte lengths — mirrors sizeof() of each qws_*_t struct.
+-- Indexed as SIMPLE_LEN[direction][type_id].
+-- direction: 0=command (C→S), 1=event (S→C)
+-- -----------------------------------------------------------------------
+
+local SIMPLE_LEN = {
+    [0] = {  -- commands (qws_cmd_*_t)
+        [0]  = 0,   -- Unknown
+        [1]  = 4,   -- Create            {count:i32}
+        [2]  = 0,   -- Shutdown          (empty struct)
+        [3]  = 16,  -- Region            {window,surfacekeylength,surfacedatalength,nrectangles}
+        [4]  = 12,  -- RegionMove        {window,dx,dy}
+        [5]  = 4,   -- RegionDestroy     {window}
+        [6]  = 12,  -- SetProperty       {window,property,mode}
+        [7]  = 8,   -- AddProperty       {window,property}
+        [8]  = 8,   -- RemoveProperty    {window,property}
+        [9]  = 8,   -- GetProperty       {window,property}
+        [10] = 0,   -- SetSelectionOwner
+        [11] = 0,   -- ConvertSelection
+        [12] = 8,   -- RequestFocus      {window,flag}
+        [13] = 12,  -- ChangeAltitude    {window,altitude,is_fixed}
+        [14] = 8,   -- SetOpacity        {window,opacity}
+        [15] = 24,  -- DefineCursor      {window,width,height,hot_x,hot_y,id}
+        [16] = 8,   -- SelectCursor      {window,cursor_id}
+        [17] = 0,   -- PositionCursor
+        [18] = 8,   -- GrabMouse         {window,grab}
+        [19] = 0,   -- PlaySound
+        [20] = 4,   -- QCopRegister      {dummy}
+        [21] = 12,  -- QCopSend          {channel_len,message_len,data_len}
+        [22] = 12,  -- RegionName        {window,name_len,caption_len}
+        [23] = 8,   -- Identify          {id_len,id_lock}
+        [24] = 8,   -- GrabKeyboard      {window,grab}
+        [25] = 16,  -- RepaintRegion     {window,window_flags,opaque,nrectangles}
+        [26] = 12,  -- IMMouse           {window,index,state}
+        [27] = 12,  -- IMUpdate          {window,type,widget_id}
+        [28] = 8,   -- IMResponse        {window,type}
+        [29] = 0,   -- Embed
+        [30] = 4,   -- Font              {type}
+        [31] = 0,   -- ScreenTransform
+    },
+    [1] = {  -- events (qws_evt_*_t)
+        [0]  = 0,   -- NoEvent
+        [1]  = 16,  -- Connected         {window,len,client_id,server_shm_id}
+        [2]  = 24,  -- Mouse             {window,x_root,y_root,state,delta,time}
+        [3]  = 8,   -- Focus             {window,get_focus}
+        [4]  = 16,  -- Key               {window,keycode,modifiers,unicode,flags}
+        [5]  = 12,  -- Region            {window,nrectangles,type} (padded to 12)
+        [6]  = 8,   -- Creation          {object_id,count}
+        [7]  = 12,  -- PropertyNotify    {window,property,state}
+        [8]  = 12,  -- PropertyReply     {window,property,len}
+        [9]  = 0,   -- SelectionClear
+        [10] = 0,   -- SelectionRequest
+        [11] = 0,   -- SelectionNotify
+        [12] = 20,  -- MaxWindowRect     {window,rect{x1,y1,x2,y2}}
+        [13] = 0,   -- QCopMessage
+        [14] = 8,   -- WindowOperation   {window,operation}
+        [15] = 0,   -- IMEvent
+        [16] = 0,   -- IMQuery
+        [17] = 0,   -- IMInit
+        [18] = 8,   -- Embed             {window,type}
+        [19] = 0,   -- Font
+        [20] = 0,   -- ScreenTransform
+    },
+}
+
+-- -----------------------------------------------------------------------
+-- UTF-16LE helpers
+-- -----------------------------------------------------------------------
+
+-- Extract ASCII characters from a UTF-16LE tvb range.
+-- QWS strings (app names, surface keys, window titles) are 7-bit ASCII
+-- stored as UTF-16LE, so this covers all practical cases.
+local function utf16le_tostring(tvb_range)
+    local result = ""
+    local n = tvb_range:len()
+    for i = 0, n - 2, 2 do
+        local b = tvb_range:bytes():get_index(i)
+        if b == 0 then break end  -- null terminator
+        result = result .. string.char((b >= 32 and b < 127) and b or 0x3f)
+    end
+    return result
+end
+
+-- Add a string field to `parent`, overriding its display value with the
+-- decoded UTF-16LE text so Wireshark shows the readable string.
+local function add_utf16le(parent, field, tvb_range)
+    if tvb_range:len() == 0 then return end
+    parent:add(field, tvb_range, utf16le_tostring(tvb_range))
+end
+
+-- -----------------------------------------------------------------------
+-- Rectangle array helper
+-- -----------------------------------------------------------------------
+
+local RECT_SIZE = 16  -- 4 × int32
+
+local function decode_rects(parent, tvb, offset, count, label)
+    if count <= 0 then return end
+    local total = count * RECT_SIZE
+    local list  = parent:add(qws_proto, tvb(offset, total),
+                              string.format("%s (%d)", label or "Rectangles", count))
+    for i = 0, count - 1 do
+        local o  = offset + i * RECT_SIZE
+        local x1 = tvb(o,      4):le_int()
+        local y1 = tvb(o +  4, 4):le_int()
+        local x2 = tvb(o +  8, 4):le_int()
+        local y2 = tvb(o + 12, 4):le_int()
+        local r  = list:add(qws_proto, tvb(o, RECT_SIZE),
+                             string.format("rect[%d]: (%d,%d)–(%d,%d)",
+                                           i, x1, y1, x2, y2))
+        r:add_le(f.rect_x1, tvb(o,      4))
+        r:add_le(f.rect_y1, tvb(o +  4, 4))
+        r:add_le(f.rect_x2, tvb(o +  8, 4))
+        r:add_le(f.rect_y2, tvb(o + 12, 4))
+    end
+end
+
+-- -----------------------------------------------------------------------
+-- Per-type simpleData field decoder
+-- -----------------------------------------------------------------------
+
+local function decode_simple(subtree, tvb, offset, direction, type_id)
+    local o = offset
+    if direction == 0 then
+        -- Commands
+        if type_id == 23 then           -- Identify
+            subtree:add_le(f.id_len,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.id_lock, tvb(o, 4))
+        elseif type_id == 1 then        -- Create
+            subtree:add_le(f.count, tvb(o, 4))
+        elseif type_id == 3 then        -- Region
+            subtree:add_le(f.window,        tvb(o, 4)); o = o + 4
+            subtree:add_le(f.surf_key_len,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.surf_data_len, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.nrects,        tvb(o, 4))
+        elseif type_id == 4 then        -- RegionMove
+            subtree:add_le(f.window, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.dx,     tvb(o, 4)); o = o + 4
+            subtree:add_le(f.dy,     tvb(o, 4))
+        elseif type_id == 5 then        -- RegionDestroy
+            subtree:add_le(f.window, tvb(o, 4))
+        elseif type_id == 22 then       -- RegionName
+            subtree:add_le(f.window,      tvb(o, 4)); o = o + 4
+            subtree:add_le(f.name_len,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.caption_len, tvb(o, 4))
+        elseif type_id == 25 then       -- RepaintRegion
+            subtree:add_le(f.window,       tvb(o, 4)); o = o + 4
+            subtree:add_le(f.window_flags, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.opaque,       tvb(o, 4)); o = o + 4
+            subtree:add_le(f.nrects,       tvb(o, 4))
+        elseif type_id == 13 then       -- ChangeAltitude
+            subtree:add_le(f.window,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.altitude, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.is_fixed, tvb(o, 4))
+        elseif type_id == 14 then       -- SetOpacity
+            subtree:add_le(f.window,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.opacity, tvb(o, 4))
+        elseif type_id == 12 then       -- RequestFocus
+            subtree:add_le(f.window,     tvb(o, 4)); o = o + 4
+            subtree:add_le(f.focus_flag, tvb(o, 4))
+        elseif type_id == 18 then       -- GrabMouse
+            subtree:add_le(f.window, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.grab,   tvb(o, 4))
+        elseif type_id == 24 then       -- GrabKeyboard
+            subtree:add_le(f.window, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.grab,   tvb(o, 4))
+        elseif type_id == 6 then        -- SetProperty
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.property,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.prop_mode, tvb(o, 4))
+        elseif type_id == 7 or type_id == 8 or type_id == 9 then  -- Add/Remove/GetProperty
+            subtree:add_le(f.window,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.property, tvb(o, 4))
+        elseif type_id == 15 then       -- DefineCursor
+            subtree:add_le(f.window,     tvb(o, 4)); o = o + 4
+            subtree:add_le(f.cur_width,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.cur_height, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.cur_hot_x,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.cur_hot_y,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.cur_id,     tvb(o, 4))
+        elseif type_id == 16 then       -- SelectCursor
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.cursor_id, tvb(o, 4))
+        elseif type_id == 21 then       -- QCopSend
+            subtree:add_le(f.channel_len, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.message_len, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.data_len,    tvb(o, 4))
+        elseif type_id == 27 then       -- IMUpdate
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.im_type,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.widget_id, tvb(o, 4))
+        end
+    else
+        -- Events
+        if type_id == 1 then            -- Connected
+            subtree:add_le(f.window,        tvb(o, 4)); o = o + 4
+            subtree:add_le(f.conn_len,      tvb(o, 4)); o = o + 4
+            subtree:add_le(f.conn_clientid, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.shm_id,        tvb(o, 4))
+        elseif type_id == 6 then        -- Creation
+            subtree:add_le(f.object_id, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.count,     tvb(o, 4))
+        elseif type_id == 5 then        -- Region
+            subtree:add_le(f.window,      tvb(o, 4)); o = o + 4
+            subtree:add_le(f.nrects,      tvb(o, 4)); o = o + 4
+            subtree:add   (f.region_type, tvb(o, 1))
+        elseif type_id == 2 then        -- Mouse
+            subtree:add_le(f.window,      tvb(o, 4)); o = o + 4
+            subtree:add_le(f.x_root,      tvb(o, 4)); o = o + 4
+            subtree:add_le(f.y_root,      tvb(o, 4)); o = o + 4
+            subtree:add_le(f.mouse_state, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.delta,       tvb(o, 4)); o = o + 4
+            subtree:add_le(f.time_ms,     tvb(o, 4))
+        elseif type_id == 4 then        -- Key
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.keycode,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.modifiers, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.unicode,   tvb(o, 2)); o = o + 2
+            subtree:add_le(f.key_flags, tvb(o, 2))
+        elseif type_id == 3 then        -- Focus
+            subtree:add_le(f.window,     tvb(o, 4)); o = o + 4
+            subtree:add_le(f.focus_flag, tvb(o, 4))
+        elseif type_id == 7 then        -- PropertyNotify
+            subtree:add_le(f.window,     tvb(o, 4)); o = o + 4
+            subtree:add_le(f.property,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.prop_state, tvb(o, 4))
+        elseif type_id == 8 then        -- PropertyReply
+            subtree:add_le(f.window,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.property, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.prop_len, tvb(o, 4))
+        elseif type_id == 14 then       -- WindowOperation
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.operation, tvb(o, 4))
+        elseif type_id == 18 then       -- Embed
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.operation, tvb(o, 4))
+        end
+    end
+end
+
+-- -----------------------------------------------------------------------
+-- Per-type rawData decoder
+-- Mirrors qws_trace_decode_command / qws_trace_decode_event from qws_trace.c.
+-- simpleData starts at tvb offset 12; values are read from there as needed.
+-- -----------------------------------------------------------------------
+
+local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
+    if raw_len <= 0 then return end
+    local o  = raw_offset
+    local sd = 12   -- simpleData base offset in tvb
+
+    if direction == 0 then
+        -- Commands
+
+        if type_id == 23 then
+            -- Identify: rawData = UTF-16LE app name
+            add_utf16le(root, f.app_name, tvb(o, raw_len))
+
+        elseif type_id == 22 then
+            -- RegionName: name (name_len×2 bytes) + caption (caption_len×2 bytes)
+            -- name_len / caption_len in simpleData are char counts → multiply by 2 for bytes
+            local name_bytes    = tvb(sd + 4, 4):le_int() * 2
+            local caption_bytes = tvb(sd + 8, 4):le_int() * 2
+            if name_bytes > 0 and raw_len >= name_bytes then
+                add_utf16le(root, f.window_name, tvb(o, name_bytes))
+            end
+            if caption_bytes > 0 and raw_len >= name_bytes + caption_bytes then
+                add_utf16le(root, f.window_caption, tvb(o + name_bytes, caption_bytes))
+            end
+
+        elseif type_id == 3 then
+            -- Region: rects[] + surface key (UTF-16LE) + surface data
+            local nrects      = tvb(sd + 12, 4):le_int()
+            local key_chars   = tvb(sd +  4, 4):le_int()
+            local data_len    = tvb(sd +  8, 4):le_int()
+            local rects_bytes = nrects * RECT_SIZE
+            local key_bytes   = key_chars * 2
+            if nrects > 0 and raw_len >= rects_bytes then
+                decode_rects(root, tvb, o, nrects, "Rectangles")
+            end
+            local key_off  = o + rects_bytes
+            local data_off = key_off + key_bytes
+            if key_chars > 0 and raw_len >= rects_bytes + key_bytes then
+                local key_str = utf16le_tostring(tvb(key_off, key_bytes))
+                add_utf16le(root, f.surface_key, tvb(key_off, key_bytes))
+                local remaining = raw_len - rects_bytes - key_bytes
+                if key_str == "shm" and data_len >= 24 and remaining >= 24 then
+                    local st = root:add(qws_proto, tvb(data_off, 24), "Surface Data (shm)")
+                    st:add_le(f.shm_mem_id,  tvb(data_off,      4))
+                    st:add_le(f.shm_width,   tvb(data_off +  4, 4))
+                    st:add_le(f.shm_height,  tvb(data_off +  8, 4))
+                    st:add_le(f.shm_lock_id, tvb(data_off + 12, 4))
+                    st:add_le(f.shm_format,  tvb(data_off + 16, 4))
+                    st:add_le(f.shm_flags,   tvb(data_off + 20, 4))
+                elseif data_len > 0 and remaining > 0 then
+                    root:add(f.raw_data, tvb(data_off, math.min(data_len, remaining)))
+                end
+            end
+
+        elseif type_id == 25 then
+            -- RepaintRegion: rects[]
+            local nrects = tvb(sd + 12, 4):le_int()
+            if nrects > 0 and raw_len >= nrects * RECT_SIZE then
+                decode_rects(root, tvb, o, nrects, "Rectangles")
+            end
+
+        elseif type_id == 30 then
+            -- Font: ASCII font name
+            root:add(f.font_name, tvb(o, raw_len))
+
+        elseif type_id == 20 then
+            -- QCopRegister: UTF-16LE channel name
+            add_utf16le(root, f.qcop_channel, tvb(o, raw_len))
+
+        elseif type_id == 21 then
+            -- QCopSend: channel (ch_len×2 UTF-16LE) + message (msg_len×2 UTF-16LE) + data
+            local ch_bytes  = tvb(sd,     4):le_int() * 2
+            local msg_bytes = tvb(sd + 4, 4):le_int() * 2
+            local dat_len   = tvb(sd + 8, 4):le_int()
+            if ch_bytes  > 0 and raw_len >= ch_bytes then
+                add_utf16le(root, f.qcop_channel, tvb(o, ch_bytes))
+            end
+            if msg_bytes > 0 and raw_len >= ch_bytes + msg_bytes then
+                add_utf16le(root, f.qcop_message, tvb(o + ch_bytes, msg_bytes))
+            end
+            local dat_off = ch_bytes + msg_bytes
+            if dat_len > 0 and raw_len >= dat_off + dat_len then
+                root:add(f.raw_data, tvb(o + dat_off, dat_len))
+            end
+
+        else
+            root:add(f.raw_data, tvb(o, raw_len))  -- generic fallback
+        end
+
+    else
+        -- Events
+
+        if type_id == 1 then
+            -- Connected: ASCII display spec (length from simpleData.len field)
+            local display_len = tvb(sd + 4, 4):le_int()
+            if display_len > 0 and raw_len >= display_len then
+                root:add(f.display_spec, tvb(o, display_len))
+            end
+
+        elseif type_id == 5 then
+            -- Region: rects[]
+            local nrects = tvb(sd + 4, 4):le_int()
+            if nrects > 0 and raw_len >= nrects * RECT_SIZE then
+                decode_rects(root, tvb, o, nrects, "Rectangles")
+            end
+
+        else
+            root:add(f.raw_data, tvb(o, raw_len))  -- generic fallback
+        end
+    end
+end
+
+-- -----------------------------------------------------------------------
+-- Main dissector function
+-- -----------------------------------------------------------------------
+
+function qws_proto.dissector(tvb, pinfo, tree)
+    local pkt_len = tvb:len()
+    if pkt_len < 12 then return 0 end  -- 4 capture header + 8 QWS header minimum
+
+    pinfo.cols.protocol:set("QWS")
+
+    -- Capture header
+    local direction     = tvb(0, 1):uint()
+    local client_id_val = tvb(1, 1):uint()
+
+    -- Source / Destination — populates Wireshark's Source/Destination columns
+    -- and enables standard ip.src/dst/addr display filters.
+    --   Server:   10.0.0.0
+    --   Client N: 10.0.0.N
+    local client_addr = Address.ip("10.0.0." .. client_id_val)
+    local server_addr = Address.ip("10.0.0.0")
+    if direction == 0 then   -- C→S command
+        pinfo.src = client_addr
+        pinfo.dst = server_addr
+    else                      -- S→C event
+        pinfo.src = server_addr
+        pinfo.dst = client_addr
+    end
+
+    -- QWS wire header (little-endian int32s)
+    local type_id = tvb(4, 4):le_int()
+    local raw_len = tvb(8, 4):le_int()
+
+    -- Resolve type name and simpleData size
+    local type_names = (direction == 0) and CMD_NAMES or EVT_NAMES
+    local type_name  = type_names[type_id] or string.format("type=0x%x", type_id)
+    local dir_arrow  = (direction == 0) and "C→S" or "S→C"
+    local simple_len = ((SIMPLE_LEN[direction] or {})[type_id]) or 0
+
+    pinfo.cols.info:set(string.format("[%s] %s", dir_arrow, type_name))
+
+    -- Root tree item
+    local root = tree:add(qws_proto, tvb(),
+                           string.format("Qt Window System Protocol, %s %s",
+                                         dir_arrow, type_name))
+
+    -- Capture header subtree
+    local cap_tree = root:add(qws_proto, tvb(0, 4), "Capture Header")
+    cap_tree:add(f.direction, tvb(0, 1))
+    cap_tree:add(f.client_id, tvb(1, 1))
+    cap_tree:add(f.reserved,  tvb(2, 2))
+
+    -- QWS wire header subtree
+    local hdr_tree = root:add(qws_proto, tvb(4, 8), "QWS Header")
+    hdr_tree:add_le(f.msg_type, tvb(4, 4)):append_text(
+        string.format("  (%s)", type_name))
+    hdr_tree:add_le(f.raw_len, tvb(8, 4))
+
+    -- Simple data subtree
+    if simple_len > 0 and pkt_len >= 12 + simple_len then
+        local sd_tree = root:add(qws_proto, tvb(12, simple_len),
+                                  string.format("Simple Data (%d bytes)", simple_len))
+        decode_simple(sd_tree, tvb, 12, direction, type_id)
+    end
+
+    -- Raw data (decoded per-type, matching qws_trace.c field-level output)
+    local raw_offset = 12 + simple_len
+    if raw_len > 0 and pkt_len >= raw_offset + raw_len then
+        decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
+    end
+
+    return pkt_len
+end
+
+-- -----------------------------------------------------------------------
+-- Register for DLT_USER0 (wtap link type 147)
+-- -----------------------------------------------------------------------
+
+DissectorTable.get("wtap_encap"):add(wtap.USER0, qws_proto)

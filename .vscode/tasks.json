@@ -3,8 +3,8 @@
     "tasks": [
         // ---------------------------------------------------------------
         // trace: 1. QWS Server
-        //   Builds first, then starts the example app as the QWS server
-        //   on display 1. Socket appears at /tmp/qtembedded-0/QtEmbedded-1.
+        //   Starts the example app as the QWS server on display 1.
+        //   Socket appears at /tmp/qtembedded-0/QtEmbedded-1.
         // ---------------------------------------------------------------
         {
             "label": "trace: 1. QWS Server",
@@ -16,7 +16,6 @@
                     "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib"
                 }
             },
-            "dependsOn": "Meson: Build all targets",
             "isBackground": true,
             "presentation": {
                 "reveal": "always",
@@ -34,11 +33,10 @@
         {
             "label": "trace: 2. Proxy",
             "type": "shell",
-            "command": "until [ -S /tmp/qtembedded-0/QtEmbedded-0 ]; do sleep 0.2; done && ${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1 -vvv",
+            "command": "until [ -S /tmp/qtembedded-0/QtEmbedded-0 ]; do sleep 0.2; done && ${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1 -w capture.pcapng -vvv",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "dependsOn": "Meson: Build all targets",
             "isBackground": true,
             "presentation": {
                 "reveal": "always",
@@ -64,7 +62,6 @@
                     "QWS_DISPLAY": ":2"
                 }
             },
-            "dependsOn": "Meson: Build all targets",
             "isBackground": true,
             "presentation": {
                 "reveal": "always",
@@ -75,18 +72,32 @@
         },
 
         // ---------------------------------------------------------------
-        // trace: Full Setup  (main entry point)
-        //   Launches all three tasks in parallel. Tasks 2 and 3 use
+        // trace: Launch All  (internal — launched after build completes)
+        //   Starts all three tasks in parallel. Tasks 2 and 3 use
         //   socket-wait loops so ordering is handled automatically.
         // ---------------------------------------------------------------
         {
-            "label": "trace: Full Setup",
+            "label": "trace: Launch All",
             "dependsOn": [
                 "trace: 1. QWS Server",
                 "trace: 2. Proxy",
                 "trace: 3. QWS Client"
             ],
             "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+
+        // ---------------------------------------------------------------
+        // trace: Full Setup  (main entry point)
+        //   Builds first, then launches all three tasks in parallel.
+        // ---------------------------------------------------------------
+        {
+            "label": "trace: Full Setup",
+            "dependsOn": [
+                "Meson: Build all targets",
+                "trace: Launch All"
+            ],
+            "dependsOrder": "sequence",
             "problemMatcher": []
         }
     ]
