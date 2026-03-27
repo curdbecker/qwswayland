@@ -39,6 +39,14 @@ local IMAGE_FORMAT_NAMES = {
     [15] = "ARGB4444_Pre",
 }
 
+-- Qt::WindowType values (bits 0-7 of window_flags)
+local WINDOW_TYPE_NAMES = {
+    [0x00] = "Widget",      [0x01] = "Window",      [0x03] = "Dialog",
+    [0x05] = "Sheet",       [0x07] = "Drawer",      [0x09] = "Popup",
+    [0x0b] = "Tool",        [0x0d] = "ToolTip",     [0x0f] = "SplashScreen",
+    [0x11] = "Desktop",     [0x12] = "SubWindow",
+}
+
 -- -----------------------------------------------------------------------
 -- Field declarations
 -- -----------------------------------------------------------------------
@@ -91,7 +99,11 @@ f.shm_height    = ProtoField.int32 ("qws.shm.height",   "Height",        base.DE
 f.shm_lock_id   = ProtoField.int32 ("qws.shm.lock_id",  "Lock ID",       base.DEC)
 f.shm_format    = ProtoField.int32 ("qws.shm.format",   "Format",        base.DEC,
                     IMAGE_FORMAT_NAMES)
-f.shm_flags     = ProtoField.uint32("qws.shm.flags",    "Surface Flags", base.HEX)
+-- Surface flags bitmask (QWSWindowSurface::SurfaceFlag)
+f.shm_flags          = ProtoField.uint32("qws.shm.flags",          "Surface Flags",   base.HEX)
+f.shm_flag_reserved  = ProtoField.bool  ("qws.shm.flag.reserved",  "RegionReserved",  32, nil, 0x01)
+f.shm_flag_buffered  = ProtoField.bool  ("qws.shm.flag.buffered",  "Buffered",        32, nil, 0x02)
+f.shm_flag_opaque    = ProtoField.bool  ("qws.shm.flag.opaque",    "Opaque",          32, nil, 0x04)
 
 -- Connected event
 f.conn_len      = ProtoField.int32 ("qws.conn_len",     "Display Spec Len", base.DEC)
@@ -130,9 +142,31 @@ f.id_lock       = ProtoField.int32 ("qws.id_lock",      "Lock ID",          base
 f.name_len      = ProtoField.int32 ("qws.name_len",     "Name Len (bytes)", base.DEC)
 f.caption_len   = ProtoField.int32 ("qws.caption_len",  "Caption Len (bytes)", base.DEC)
 
--- RepaintRegion command
-f.window_flags  = ProtoField.uint32("qws.window_flags", "Window Flags",     base.HEX)
-f.opaque        = ProtoField.int32 ("qws.opaque",       "Opaque",           base.DEC)
+-- Window flags (Qt::WindowFlags) — RepaintRegion command
+-- Low byte (0xff) = Qt::WindowType; upper bytes = hint bits
+f.window_flags       = ProtoField.uint32("qws.window_flags",      "Window Flags",              base.HEX)
+f.wf_type            = ProtoField.uint32("qws.wf.type",           "Window Type",               base.DEC, WINDOW_TYPE_NAMES, 0xff)
+f.wf_mswin_fixed     = ProtoField.bool  ("qws.wf.mswin_fixed",    "MSWindowsFixedSizeDialog",  32, nil, 0x00000100)
+f.wf_mswin_own_dc    = ProtoField.bool  ("qws.wf.mswin_own_dc",   "MSWindowsOwnDC",            32, nil, 0x00000200)
+f.wf_x11_bypass_wm   = ProtoField.bool  ("qws.wf.x11_bypass_wm", "X11BypassWindowManager",    32, nil, 0x00000400)
+f.wf_frameless       = ProtoField.bool  ("qws.wf.frameless",      "Frameless",                 32, nil, 0x00000800)
+f.wf_title           = ProtoField.bool  ("qws.wf.title",          "WindowTitle",               32, nil, 0x00001000)
+f.wf_system_menu     = ProtoField.bool  ("qws.wf.system_menu",    "WindowSystemMenu",          32, nil, 0x00002000)
+f.wf_minimize        = ProtoField.bool  ("qws.wf.minimize",       "WindowMinimizeButton",      32, nil, 0x00004000)
+f.wf_maximize        = ProtoField.bool  ("qws.wf.maximize",       "WindowMaximizeButton",      32, nil, 0x00008000)
+f.wf_ctx_help        = ProtoField.bool  ("qws.wf.ctx_help",       "WindowContextHelpButton",   32, nil, 0x00010000)
+f.wf_shade           = ProtoField.bool  ("qws.wf.shade",          "WindowShadeButton",         32, nil, 0x00020000)
+f.wf_stays_on_top    = ProtoField.bool  ("qws.wf.stays_on_top",   "WindowStaysOnTop",          32, nil, 0x00040000)
+f.wf_ok_button       = ProtoField.bool  ("qws.wf.ok_button",      "WindowOkButton",            32, nil, 0x00080000)
+f.wf_cancel_button   = ProtoField.bool  ("qws.wf.cancel_button",  "WindowCancelButton",        32, nil, 0x00100000)
+f.wf_customize       = ProtoField.bool  ("qws.wf.customize",      "CustomizeWindow",           32, nil, 0x02000000)
+f.wf_stays_on_bottom = ProtoField.bool  ("qws.wf.stays_on_bottom","WindowStaysOnBottom",       32, nil, 0x04000000)
+f.wf_close_button    = ProtoField.bool  ("qws.wf.close_button",   "WindowCloseButton",         32, nil, 0x08000000)
+f.wf_mac_toolbar     = ProtoField.bool  ("qws.wf.mac_toolbar",    "MacWindowToolBarButton",    32, nil, 0x10000000)
+f.wf_bypass_proxy    = ProtoField.bool  ("qws.wf.bypass_proxy",   "BypassGraphicsProxy",       32, nil, 0x20000000)
+f.wf_softkeys_vis    = ProtoField.bool  ("qws.wf.softkeys_vis",   "WindowSoftkeysVisible",     32, nil, 0x40000000)
+f.wf_softkeys_resp   = ProtoField.bool  ("qws.wf.softkeys_resp",  "WindowSoftkeysRespond",     32, nil, 0x80000000)
+f.opaque             = ProtoField.int32 ("qws.opaque",            "Opaque",                    base.DEC)
 
 -- ChangeAltitude command
 f.altitude      = ProtoField.int32 ("qws.altitude",     "Altitude",         base.DEC,
@@ -354,10 +388,32 @@ local function decode_simple(subtree, tvb, offset, direction, type_id)
             subtree:add_le(f.name_len,    tvb(o, 4)); o = o + 4
             subtree:add_le(f.caption_len, tvb(o, 4))
         elseif type_id == 25 then       -- RepaintRegion
-            subtree:add_le(f.window,       tvb(o, 4)); o = o + 4
-            subtree:add_le(f.window_flags, tvb(o, 4)); o = o + 4
-            subtree:add_le(f.opaque,       tvb(o, 4)); o = o + 4
-            subtree:add_le(f.nrects,       tvb(o, 4))
+            subtree:add_le(f.window, tvb(o, 4)); o = o + 4
+            local wf = subtree:add_le(f.window_flags, tvb(o, 4))
+            wf:add_le(f.wf_type,            tvb(o, 4))
+            wf:add_le(f.wf_mswin_fixed,     tvb(o, 4))
+            wf:add_le(f.wf_mswin_own_dc,    tvb(o, 4))
+            wf:add_le(f.wf_x11_bypass_wm,   tvb(o, 4))
+            wf:add_le(f.wf_frameless,       tvb(o, 4))
+            wf:add_le(f.wf_title,           tvb(o, 4))
+            wf:add_le(f.wf_system_menu,     tvb(o, 4))
+            wf:add_le(f.wf_minimize,        tvb(o, 4))
+            wf:add_le(f.wf_maximize,        tvb(o, 4))
+            wf:add_le(f.wf_ctx_help,        tvb(o, 4))
+            wf:add_le(f.wf_shade,           tvb(o, 4))
+            wf:add_le(f.wf_stays_on_top,    tvb(o, 4))
+            wf:add_le(f.wf_ok_button,       tvb(o, 4))
+            wf:add_le(f.wf_cancel_button,   tvb(o, 4))
+            wf:add_le(f.wf_customize,       tvb(o, 4))
+            wf:add_le(f.wf_stays_on_bottom, tvb(o, 4))
+            wf:add_le(f.wf_close_button,    tvb(o, 4))
+            wf:add_le(f.wf_mac_toolbar,     tvb(o, 4))
+            wf:add_le(f.wf_bypass_proxy,    tvb(o, 4))
+            wf:add_le(f.wf_softkeys_vis,    tvb(o, 4))
+            wf:add_le(f.wf_softkeys_resp,   tvb(o, 4))
+            o = o + 4
+            subtree:add_le(f.opaque,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.nrects,  tvb(o, 4))
         elseif type_id == 13 then       -- ChangeAltitude
             subtree:add_le(f.window,   tvb(o, 4)); o = o + 4
             subtree:add_le(f.altitude, tvb(o, 4)); o = o + 4
@@ -467,10 +523,9 @@ local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
             add_utf16le(root, f.app_name, tvb(o, raw_len))
 
         elseif type_id == 22 then
-            -- RegionName: name (name_len×2 bytes) + caption (caption_len×2 bytes)
-            -- name_len / caption_len in simpleData are char counts → multiply by 2 for bytes
-            local name_bytes    = tvb(sd + 4, 4):le_int() * 2
-            local caption_bytes = tvb(sd + 8, 4):le_int() * 2
+            -- RegionName: name (name_len bytes) + caption (caption_len bytes)
+            local name_bytes    = tvb(sd + 4, 4):le_int()
+            local caption_bytes = tvb(sd + 8, 4):le_int()
             if name_bytes > 0 and raw_len >= name_bytes then
                 add_utf16le(root, f.window_name, tvb(o, name_bytes))
             end
@@ -501,7 +556,10 @@ local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
                     st:add_le(f.shm_height,  tvb(data_off +  8, 4))
                     st:add_le(f.shm_lock_id, tvb(data_off + 12, 4))
                     st:add_le(f.shm_format,  tvb(data_off + 16, 4))
-                    st:add_le(f.shm_flags,   tvb(data_off + 20, 4))
+                    local sf = st:add_le(f.shm_flags, tvb(data_off + 20, 4))
+                    sf:add_le(f.shm_flag_reserved, tvb(data_off + 20, 4))
+                    sf:add_le(f.shm_flag_buffered, tvb(data_off + 20, 4))
+                    sf:add_le(f.shm_flag_opaque,   tvb(data_off + 20, 4))
                 elseif data_len > 0 and remaining > 0 then
                     root:add(f.raw_data, tvb(data_off, math.min(data_len, remaining)))
                 end
@@ -523,9 +581,9 @@ local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
             add_utf16le(root, f.qcop_channel, tvb(o, raw_len))
 
         elseif type_id == 21 then
-            -- QCopSend: channel (ch_len×2 UTF-16LE) + message (msg_len×2 UTF-16LE) + data
-            local ch_bytes  = tvb(sd,     4):le_int() * 2
-            local msg_bytes = tvb(sd + 4, 4):le_int() * 2
+            -- QCopSend: channel (ch_len UTF-16LE) + message (msg_len UTF-16LE) + data
+            local ch_bytes  = tvb(sd,     4):le_int() 
+            local msg_bytes = tvb(sd + 4, 4):le_int() 
             local dat_len   = tvb(sd + 8, 4):le_int()
             if ch_bytes  > 0 and raw_len >= ch_bytes then
                 add_utf16le(root, f.qcop_channel, tvb(o, ch_bytes))
@@ -600,7 +658,7 @@ function qws_proto.dissector(tvb, pinfo, tree)
     -- Resolve type name and simpleData size
     local type_names = (direction == 0) and CMD_NAMES or EVT_NAMES
     local type_name  = type_names[type_id] or string.format("type=0x%x", type_id)
-    local dir_arrow  = (direction == 0) and "C→S" or "S→C"
+    local dir_arrow  = (direction == 0) and "CMD" or "EVT"
     local simple_len = ((SIMPLE_LEN[direction] or {})[type_id]) or 0
 
     pinfo.cols.info:set(string.format("[%s] %s", dir_arrow, type_name))
