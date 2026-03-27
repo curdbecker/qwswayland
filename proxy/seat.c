@@ -36,7 +36,7 @@ static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
     qwswl_client_t *cl = win->client;
 
     /* Translate surface-local coords to QWS global coords */
-    pointer_data->gx = win->geometry.x + wl_fixed_to_int(sx) 
+    pointer_data->gx = win->geometry.x + wl_fixed_to_int(sx)
         + win->geometry.move_off_x;
     pointer_data->gy = win->geometry.y + wl_fixed_to_int(sy)
         + win->geometry.move_off_y;
@@ -46,7 +46,7 @@ static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
     //          wl_fixed_to_int(sx), wl_fixed_to_int(sy),
     //          pointer_data->gx, pointer_data->gy);
 
-    // assert(pointer_data->gx >= 0 && pointer_data->gy >= 0);
+    assert(pointer_data->gx >= 0 && pointer_data->gy >= 0);
 
     struct timespec _ts;
     clock_gettime(CLOCK_MONOTONIC, &_ts);

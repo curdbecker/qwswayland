@@ -33,7 +33,8 @@ typedef struct {
     qws_shm_t    listen_display_shm;
     qlock_t     *listen_display_lock;
 
-    char upstream_path[256];    /* upstream QWS server socket path */
+    qws_display_paths_t listen_paths;   /* paths for the display we listen on */
+    qws_display_paths_t upstream_paths; /* paths for the upstream QWS server   */
     int  client_id;           /* incremented each session, used in trace labels */
 
     qws_pcap_writer_t *pcap_writer;  /* NULL if -w not given */
@@ -41,10 +42,10 @@ typedef struct {
     bool running;
 } qwstrace_state_t;
 
-/* Initialise state and create the listen socket on socket_path.
+/* Initialise state: sets up display directories, creates the listen socket,
+ * and fills listen_paths / upstream_paths.
  * Returns 0 on success, -1 on error. */
-int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
-                  const char *upstream_path);
+int qwstrace_init(qwstrace_state_t *st, int listen_display, int upstream_display);
 
 /* Run the proxy event loop. Blocks until a signal closes listen_fd. */
 int qwstrace_run(qwstrace_state_t *st);

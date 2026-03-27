@@ -159,6 +159,7 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
                 bool debug_draw_rects)
 {
     memset(state, 0, sizeof(*state));
+    state->qws_display = qws_display;
     state->debug_draw_rects = debug_draw_rects;
     state->qws_server_fd = -1;
     state->qws_epoll_fd = -1;
@@ -238,22 +239,26 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
     xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener, NULL);
     wl_display_roundtrip(state->wl_display);
 
-    /* ---- Compute socket path once ---- */
-    if (qws_socket_path(qws_display, state->socket_path,
-                         sizeof(state->socket_path)) != 0) {
-        fprintf(stderr, "[qwswayland] Failed to compute socket path\n");
+    /* ---- Initialise display directory and derive all paths ---- */
+    if (qws_init_display_dir(qws_display, &state->display_paths) != 0) {
+        fprintf(stderr, "[qwswayland] Failed to initialise display directory\n");
+        return -1;
+    }
+
+    if (qws_build_font_database(state->display_paths.fontdb) != 0) {
+        fprintf(stderr, "[qwswayland] Failed to create font database\n");
         return -1;
     }
 
     /* ---- Create QWS server socket ---- */
-    state->qws_server_fd = qws_server_listen(state->socket_path);
+    state->qws_server_fd = qws_server_listen(state->display_paths.socket);
     if (state->qws_server_fd < 0) {
         fprintf(stderr, "[qwswayland] Failed to create QWS socket at %s: %s\n",
-                state->socket_path, strerror(errno));
+                state->display_paths.socket, strerror(errno));
         return -1;
     }
     fprintf(stderr, "[qwswayland] QWS server listening on %s\n",
-            state->socket_path);
+            state->display_paths.socket);
 
     /* Create a shared memory region from the server-side to share display information
      * with the client... and don't forget about the lock.
@@ -268,7 +273,7 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
         fprintf(stderr, "[qwswayland] Failed to create display shm\n");
         return -1;
     }
-    state->display_lock = qlock_create(state->socket_path, 'd');
+    state->display_lock = qlock_create(state->display_paths.socket, 'd');
     if (state->display_lock == NULL) {
         fprintf(stderr, "[qwswayland] Failed to create display lock\n");
         return -1;
@@ -350,7 +355,7 @@ void qwswl_shutdown(qwswl_state_t *state)
     /* Clean up QWS */
     if (state->qws_server_fd >= 0) {
         close(state->qws_server_fd);
-        unlink(state->socket_path);
+        unlink(state->display_paths.socket);
     }
 
     qws_shm_destroy(&state->display_shm);

@@ -21,6 +21,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <limits.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -383,7 +384,7 @@ typedef struct {
 /* QWS_CMD_REGION_REQUEST */
 typedef struct {
     int32_t window;
-    int32_t surfacekeylength;
+    int32_t surfacekeylength; /* character length (not null-terminated) */
     int32_t surfacedatalength;
     int32_t nrectangles;
 } qws_cmd_region_request_t;
@@ -418,8 +419,8 @@ typedef struct {
  * rawData = UTF-16 encoded window name string */
 typedef struct {
     int32_t window;
-    int32_t name_len;       /* byte length of name in rawData */
-    int32_t caption_len;    /* byte length of caption in rawData */
+    int32_t name_bytes;       /* byte length (!) of name in rawData */
+    int32_t caption_bytes;    /* byte length (!) of caption in rawData */
 } qws_cmd_region_name_t;
  
 /* QWSChangeAltitudeCommand::Altitude (Qt 4.8) */
@@ -450,7 +451,7 @@ typedef struct {
 /* QWS_CMD_SET_OPACITY */
 typedef struct {
     int32_t window;
-    int32_t opacity;    /* 0-255 */
+    uint8_t opacity;    /* 0-255 */
 } qws_cmd_set_opacity_t;
  
 /* QWS_CMD_ADD_PROPERTY */
@@ -665,10 +666,6 @@ void qws_reader_reset(qws_reader_t *r);
  * Returns fd on success, -1 on error (errno set). */
 int qws_server_listen(const char *socket_path);
  
-/* Auto-generate the default QWS socket path for given display number.
- * Writes into buf (must be >= pathlen). Returns 0 on success. */
-int qws_socket_path(int display, char *buf, size_t buflen);
- 
 /* Accept a QWS client connection. Returns client fd or -1. */
 int qws_server_accept(int server_fd);
 
@@ -707,6 +704,51 @@ int qws_shm_attach_sysv(qws_shm_t *shm, int shm_id);
 
 /* Detach a previously attached mapping without deleting the segment. */
 void qws_shm_detach(qws_shm_t *shm);
+
+/* -----------------------------------------------------------
+ * Display directory paths
+ * ----------------------------------------------------------- */
+
+/* All filesystem paths derived from a single display number. */
+typedef struct {
+    char base[PATH_MAX];    /* /tmp/qtembedded-<display>                      */
+    char socket[PATH_MAX];  /* /tmp/qtembedded-<display>/QtEmbedded-<display> */
+    char fonts[PATH_MAX];   /* /tmp/qtembedded-<display>/fonts                */
+    char fontdb[PATH_MAX];  /* /tmp/qtembedded-<display>/fonts/fontdb         */
+} qws_display_paths_t;
+
+/* Fill *paths from display number; no filesystem I/O.
+ * Use this for the connecting (upstream/client) side.
+ * Returns 0 on success, -1 if any path would be truncated. */
+int qws_display_paths_fill(int display, qws_display_paths_t *paths);
+
+/* Initialise the display directory tree for a server/listener.
+ * Recursively removes any existing base dir, then recreates
+ * base/ and base/fonts/.  Fills *paths.
+ * Returns 0 on success, -1 on error. */
+int qws_init_display_dir(int display, qws_display_paths_t *paths);
+
+/* -----------------------------------------------------------
+ * Font database cache
+ * ----------------------------------------------------------- */
+
+/* Version byte written as the first field of the fontdb cache file.
+ * Must match Qt's internal DatabaseVersion (qfontdatabase_qws.cpp). */
+#define QWS_FONTDB_VERSION                  4u
+
+/* QDataStream version written as the second field.
+ * 12 = QDataStream::Qt_4_3, the version used by Qt 4.8. */
+#define QWS_FONTDB_DATASTREAM_VERSION      12u
+
+/* Font directory announced to Qt inside the cache header. */
+#define QWS_FONTDB_FONT_PATH \
+    "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib/fonts"
+
+/* Create an empty fontdb cache file at fontdb_path with the QDataStream
+ * header Qt expects (version + fontpath).
+ * Directories must already exist (call qws_init_display_dir first).
+ * Returns 0 on success, -1 on any error. */
+int qws_build_font_database(const char *fontdb_path);
 
 /* -----------------------------------------------------------
  * Utility: type name strings for debugging

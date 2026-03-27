@@ -34,7 +34,7 @@ declare_hashmap(qwswl_client_map_t, int32_t, qwswl_client_t *);
 typedef struct qwswl_state {
     /* QWS server side */
     int                  qws_server_fd;
-    char                 socket_path[PATH_MAX];
+    qws_display_paths_t  display_paths;
 
     qwswl_client_map_t   client_map;
 
@@ -46,6 +46,7 @@ typedef struct qwswl_state {
     int32_t              screen_width;
     int32_t              screen_height;
     int32_t              screen_depth;
+    int                  qws_display;
 
     /* Wayland client side */
     struct wl_display    *wl_display;

@@ -77,8 +77,7 @@ static int write_all(int fd, const void *buf, size_t len)
 
 /* ------------------------------------------------------------------ */
 
-int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
-                  const char *upstream_path)
+int qwstrace_init(qwstrace_state_t *st, int listen_display, int upstream_display)
 {
     memset(st, 0, sizeof(*st));
     st->client_fd = -1;
@@ -86,7 +85,22 @@ int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
     st->listen_fd = -1;
     st->epoll_fd  = -1;
 
-    strncpy(st->upstream_path, upstream_path, sizeof(st->upstream_path) - 1);
+    if (qws_init_display_dir(listen_display, &st->listen_paths) != 0) {
+        fprintf(stderr, "qwstrace: failed to initialise display directory for :%d\n",
+                listen_display);
+        return -1;
+    }
+    if (qws_display_paths_fill(upstream_display, &st->upstream_paths) != 0) {
+        fprintf(stderr, "qwstrace: failed to construct paths for upstream display :%d\n",
+                upstream_display);
+        return -1;
+    }
+
+    if (symlink(st->upstream_paths.fontdb, st->listen_paths.fontdb) != 0) {
+        fprintf(stderr, "qwstrace: failed to symlink fontdb %s -> %s: %s\n",
+                st->listen_paths.fontdb, st->upstream_paths.fontdb, strerror(errno));
+        return -1;
+    }
 
     qws_reader_init(&st->cmd_reader, true  /* reading commands */);
     qws_reader_init(&st->evt_reader, false /* reading events  */);
@@ -97,10 +111,10 @@ int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
         return -1;
     }
 
-    st->listen_fd = qws_server_listen(listen_path);
+    st->listen_fd = qws_server_listen(st->listen_paths.socket);
     if (st->listen_fd < 0) {
         fprintf(stderr, "qwstrace: failed to listen on %s: %s\n",
-                listen_path, strerror(errno));
+                st->listen_paths.socket, strerror(errno));
         return -1;
     }
 
@@ -108,7 +122,7 @@ int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
         fprintf(stderr, "[qwswayland] Failed to create display shm\n");
         return -1;
     }
-    st->listen_display_lock = qlock_create(listen_path, 'd');
+    st->listen_display_lock = qlock_create(st->listen_paths.socket, 'd');
     if (st->listen_display_lock == NULL) {
         fprintf(stderr, "[qwswayland] Failed to create display lock\n");
         return -1;
@@ -118,8 +132,9 @@ int qwstrace_init(qwstrace_state_t *st, const char *listen_path,
     epoll_ctl(st->epoll_fd, EPOLL_CTL_ADD, st->listen_fd, &ev);
 
     st->running = true;
-    fprintf(stderr, "qws_trace_proxy: listening on %s\n", listen_path);
-    fprintf(stderr, "qws_trace_proxy: will connect upstream to %s\n", upstream_path);
+    fprintf(stderr, "qws_trace_proxy: listening on %s\n", st->listen_paths.socket);
+    fprintf(stderr, "qws_trace_proxy: will connect upstream to %s\n",
+            st->upstream_paths.socket);
     return 0;
 }
 
@@ -157,10 +172,10 @@ int qwstrace_run(qwstrace_state_t *st)
                 fprintf(stderr, "\n--- session %d: client connected ---\n",
                         st->client_id);
 
-                int sfd = qws_client_connect(st->upstream_path);
+                int sfd = qws_client_connect(st->upstream_paths.socket);
                 if (sfd < 0) {
                     fprintf(stderr, "qwstrace: cannot connect to upstream %s: %s\n",
-                            st->upstream_path, strerror(errno));
+                            st->upstream_paths.socket, strerror(errno));
                     close(cfd);
                     continue;
                 }

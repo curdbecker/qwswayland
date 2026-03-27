@@ -60,6 +60,7 @@ typedef struct qwswl_window {
     char                 *name;
     char                 *caption;
     qws_window_flags_t   win_flags;
+    bool                 fixed;
 } qwswl_window_t;
 
 /* Allocate data strctures to collect information about a QWS window.*/

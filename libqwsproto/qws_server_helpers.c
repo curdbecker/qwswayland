@@ -7,7 +7,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <iconv.h>
-#include <wchar.h>
 
 #include <assert.h>
 
@@ -159,80 +158,64 @@ qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
     return pkt;
 }
 
-size_t qws_convert_to_narrow_unicode(char **dst, const wchar_t *src, size_t srclen)
+int qws_convert_from_utf16(char **dst, const uint8_t *src, size_t srclen,
+                                   qws_utf16_endian_t endian, size_t *out_bytes)
 {
-    iconv_t cd;
-    size_t cconv;
-    char *buf;
-    size_t dstlen = srclen / 2;
-    
-    cd = iconv_open("UTF-8", "UTF-16");
-    if (!cd)
-        return -1;
-    
-    buf = calloc(dstlen + 1, sizeof *buf); /* include a terminating NUL character */
-    if (!buf)
-        return -1;
-    
+    const char *enc    = (endian == QWS_UTF16_BE) ? "UTF-16BE" : "UTF-16LE";
+    /* an UTF-8 sequence might need to use several bytes to express the same 
+     * character, therefore we use the byte size of the UTF-16 string
+     * as a simple upper bound. */
+    size_t      dstlen = srclen * 2; 
+    char       *buf    = calloc(dstlen + 1, 1);  /* +1: NUL terminator */
+    if (!buf) { *dst = NULL; return -1; }
+
+    iconv_t cd = iconv_open("UTF-8", enc);
+    if (cd == (iconv_t)-1) { free(buf); *dst = NULL; return -1; }
+
+    size_t used;
     {
-        /* iconv has the nasty habit of modifying all its arguments, so keep
-         * them in a private scope, so that we can't attempt to reuse them
-         * as outputs to the caller. */
-        size_t in_avail = srclen, out_avail = dstlen;
-        char *in = (char *) src, *out = buf;
-
-        cconv = iconv(cd, &in, &in_avail, &out, &out_avail);
-        if (cconv < 0 || in_avail != 0 || out_avail != 0)
-            cconv = -1;
+        /* iconv modifies its pointer arguments; keep in a private scope */
+        size_t in_avail = srclen * 2, out_avail = dstlen;
+        char  *in = (char *)src, *out = buf;
+        if (iconv(cd, &in, &in_avail, &out, &out_avail) == (size_t)-1
+                || in_avail != 0) {
+            iconv_close(cd); free(buf); *dst = NULL; return -1;
+        }
+        used = dstlen - out_avail;
     }
+    iconv_close(cd);
 
-    if (cconv < 0) {
-        free(buf);
-        *dst = NULL;
-    } else {
-        /* caller takes over buffer */
-        *dst = buf;
-    }
-    
-    assert(iconv_close(cd) == 0);
-    return cconv;
+    if (out_bytes) *out_bytes = used;
+    *dst = buf;
+    return 0;
 }
 
-size_t qws_convert_to_wide_unicode(wchar_t **dst, const char *src, size_t srclen)
+int qws_convert_to_utf16(uint8_t **dst, const char *src, size_t srclen,
+                                 qws_utf16_endian_t endian, size_t *out_bytes)
 {
-    iconv_t cd;
-    size_t cconv;
-    wchar_t *buf;
-    size_t dstlen = srclen * 2; /* UTF-16 is at most 2x the UTF-8 byte count */
+    const char *enc    = (endian == QWS_UTF16_BE) ? "UTF-16BE" : "UTF-16LE";
+    size_t      dstlen = srclen * 2;  /* UTF-16: at most 2 bytes per UTF-8 input byte */
+    uint8_t    *buf    = calloc(dstlen + 2, 1);  /* +2: UTF-16 NUL sentinel */
+    if (!buf) { *dst = NULL; return -1; }
 
-    cd = iconv_open("UTF-16", "UTF-8");
-    if (!cd)
-        return -1;
+    iconv_t cd = iconv_open(enc, "UTF-8");
+    if (cd == (iconv_t)-1) { free(buf); *dst = NULL; return -1; }
 
-    buf = calloc(dstlen + 2, sizeof(char)); /* +2 bytes: UTF-16 NUL is two zero bytes */
-    if (!buf)
-        return -1;
-
+    size_t used;
     {
-        /* iconv has the nasty habit of modifying all its arguments, so keep
-         * them in a private scope, so that we can't attempt to reuse them
-         * as outputs to the caller. */
+        /* iconv modifies its pointer arguments; keep in a private scope */
         size_t in_avail = srclen, out_avail = dstlen;
-        char *in = (char *)src, *out = (char *)buf;
-
-        cconv = iconv(cd, &in, &in_avail, &out, &out_avail);
-        if (cconv < 0 || in_avail != 0 || out_avail != 0)
-            cconv = -1;
+        char  *in = (char *)src, *out = (char *)buf;
+        if (iconv(cd, &in, &in_avail, &out, &out_avail) == (size_t)-1
+                || in_avail != 0) {
+            iconv_close(cd); free(buf); *dst = NULL; return -1;
+        }
+        used = dstlen - out_avail;
     }
+    iconv_close(cd);
 
-    if (cconv < 0) {
-        free(buf);
-        *dst = NULL;
-    } else {
-        /* caller takes over buffer */
-        *dst = buf;
-    }
-
-    assert(iconv_close(cd) == 0);
-    return cconv;
+    if (out_bytes) *out_bytes = used;
+    *dst = buf;
+    return 0;
 }
+

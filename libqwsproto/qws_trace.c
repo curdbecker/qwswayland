@@ -361,8 +361,8 @@ void qws_trace_decode_event(FILE *fp, int32_t type,
  * Command field decoder
  * ================================================================ */
 
-static void print_unicode_field(FILE *fp, const char *field_name, 
-        const wchar_t *field_value, size_t field_len) {
+static void print_utf16le_field(FILE *fp, const char *field_name,
+        const uint8_t *field_value, size_t field_len) {
     char *value;
 
     if (!field_value || field_len < 0) {
@@ -370,8 +370,8 @@ static void print_unicode_field(FILE *fp, const char *field_name,
         return;
     }
 
-    if (qws_convert_to_narrow_unicode(&value, 
-            field_value, field_len) < 0) {
+    if (qws_convert_from_utf16(&value,
+            field_value, field_len, QWS_UTF16_LE, NULL) != 0) {
         fprintf(fp, "      %s=<invalid>\n", field_name);
     } else {
         fprintf(fp, "      %s=\"%s\"\n", field_name, value);
@@ -392,8 +392,7 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
             const qws_cmd_identify_t *d = simple_data;
             fprintf(fp, "      id_lock=%d, id_len=%d\n",
                     d->id_lock, d->id_len);
-            print_unicode_field(fp, "app_name", (const wchar_t *)
-                raw_data, d->id_len * 2);
+            print_utf16le_field(fp, "app_name", raw_data, d->id_len * 2);
         }
         break;
     }
@@ -414,30 +413,34 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
             if (raw_data && raw_len > 0) {
                 char *surface_key;
                 const qws_cmd_region_surface_data_t *surface_data = 
-                    (qws_cmd_region_surface_data_t *) &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t) + d->surfacekeylength * 2];
+                    (qws_cmd_region_surface_data_t *) &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t) 
+                        + d->surfacekeylength * 2];
 
                 print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
 
-                print_unicode_field(fp, "surfacekey", (const wchar_t* ) 
-                    &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t)], d->surfacekeylength * 2);
+                if (qws_convert_from_utf16(&surface_key, (const uint8_t *)
+                        &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t)],
+                        d->surfacekeylength, QWS_UTF16_LE, NULL) != 0) {
+                    fprintf(fp, "       surfacekey UTF-16 invalid sequence!\n");
+                    fprintf(fp, "       raw_data=\n");
+                    qws_trace_hexdump(fp, "            ", raw_data, raw_len);
+                    break;
+                }
 
+                fprintf(fp, "      surfacekey=%s\n", surface_key);
                 fprintf(fp, "      surfacedata=\n");
-                if (qws_convert_to_narrow_unicode(&surface_key, (const wchar_t *)
-                        &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t)], 
-                        d->surfacekeylength * 2) >= 0) {
-                    if (!strcmp(surface_key, "shm")) {
-                        fprintf(fp, "        mem_id=%d, width=%d, height=%d, lock_id=%d, format=%s\n",
-                            surface_data->shm.mem_id, surface_data->shm.width, surface_data->shm.height,
-                            surface_data->shm.lock_id, qws_image_format_name(surface_data->shm.format));
-                        fprintf(fp, "        flags=");
-                        print_surface_flags(fp, surface_data->shm.flags);
-                        fprintf(fp, "\n");
-                    } else {
-                        qws_trace_hexdump(fp, "            ",  surface_data->raw, d->surfacedatalength);
-                    }
+                if (!strcmp(surface_key, "shm")) {
+                    fprintf(fp, "        mem_id=%d, width=%d, height=%d, lock_id=%d, format=%s\n",
+                        surface_data->shm.mem_id, surface_data->shm.width, surface_data->shm.height,
+                        surface_data->shm.lock_id, qws_image_format_name(surface_data->shm.format));
+                    fprintf(fp, "        flags=");
+                    print_surface_flags(fp, surface_data->shm.flags);
+                    fprintf(fp, "\n");
                 } else {
                     qws_trace_hexdump(fp, "            ",  surface_data->raw, d->surfacedatalength);
                 }
+
+                free(surface_key);
             }
         }
         break;
@@ -475,12 +478,11 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
     case QWS_CMD_REGION_NAME: {
         if (simple_len >= (int32_t)sizeof(qws_cmd_region_name_t)) {
             const qws_cmd_region_name_t *d = simple_data;
-            fprintf(fp, "      window=%d, name_len=%d, caption_len=%d\n",
-                    d->window, d->name_len, d->caption_len);
-            print_unicode_field(fp, "name", (const wchar_t *)
-                raw_data, d->name_len * 2);
-            print_unicode_field(fp, "caption", (const wchar_t *)
-                &((char *) raw_data)[d->name_len * 2], d->caption_len * 2);
+            fprintf(fp, "      window=%d, name_bytes=%d, caption_bytes=%d\n",
+                    d->window, d->name_bytes, d->caption_bytes);
+            print_utf16le_field(fp, "name", raw_data, d->name_bytes / 2);
+            print_utf16le_field(fp, "caption",
+                &((uint8_t *) raw_data)[d->name_bytes], d->caption_bytes / 2);
         }
         break;
     }

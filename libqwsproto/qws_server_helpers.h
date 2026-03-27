@@ -7,6 +7,8 @@
 #define QWS_SERVER_HELPERS_H
 
 #include "qws_proto.h"
+#include <stdio.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,8 +60,23 @@ qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1,
 qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
                                         const void *data, int32_t len);
 
-size_t qws_convert_to_narrow_unicode(char **dst, const wchar_t *src, size_t srclen);
-size_t qws_convert_to_wide_unicode(wchar_t **dst, const char *src, size_t srclen);
+/* UTF-16 byte order for conversion functions */
+typedef enum {
+    QWS_UTF16_LE = 0,  /* little-endian, no BOM (default; matches QWS wire format on x86) */
+    QWS_UTF16_BE = 1,  /* big-endian, no BOM (QDataStream default byte order) */
+} qws_utf16_endian_t;
+
+/* Convert UTF-16LE or UTF-16BE to UTF-8.
+ * On success: *dst = malloc'd NUL-terminated string (caller frees), returns 0.
+ * out_bytes may be NULL. On error: *dst = NULL, returns -1. */
+int qws_convert_from_utf16(char **dst, const uint8_t *src, size_t srclen,
+                                   qws_utf16_endian_t endian, size_t *out_bytes);
+
+/* Convert UTF-8 to UTF-16LE or UTF-16BE.
+ * On success: *dst = malloc'd buffer (caller frees), *out_bytes = byte count, returns 0.
+ * out_bytes may be NULL. On error: *dst = NULL, returns -1. */
+int qws_convert_to_utf16(uint8_t **dst, const char *src, size_t srclen,
+                                 qws_utf16_endian_t endian, size_t *out_bytes);
 
 #ifdef __cplusplus
 }

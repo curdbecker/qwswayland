@@ -203,6 +203,31 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
 {
     if (!win || nrects <= 0 || !rects) return;
 
+    /* Window geometry updates shall reset region movement offsets.
+     *
+     * The QWS implementation has the nasty habit of sometimes producing 
+     * out of order commands that are apparently meant to be without 
+     * any effect.
+     * 
+     * A RegionMoveCommand before a RegionCommand is expected to be
+     * a no-operation that does should not affect coordinate translation.
+     * 
+     * Otherwise, this could then lead to incorrect pointer offsets that
+     * inexplicably only affect certain windows. For instance, a
+     * QMessageBox::about works without any issues and a QMessageBox::warning
+     * suddenly does have a severe offset without any reasonable explanation.
+     * 
+     * In order to deal with this for now without any particular effort,
+     * we will reset update the offsets when we receive a RegionMoveCommand
+     * but then reset them here when we calculate calculate the actual position.
+     * 
+     * This hopefully does reflect how Qt would handle such cases internally.
+     * The only uncertainty is whether a subsequent RegionCommand for an
+     * already existing region will actually reset the offsets...
+     */
+    win->geometry.move_off_x = 0;
+    win->geometry.move_off_y = 0;
+
     /* Compute bounding box of the region */
     int32_t min_x1 = rects[0].x1, min_y1 = rects[0].y1;
     int32_t max_x2 = rects[0].x2, max_y2 = rects[0].y2;
@@ -279,15 +304,21 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
     assert(win->client_shm.shm.size == win->server_shm.size);
 
     for (int i = 0; i < nrects; i++) {
-        int32_t copy_x = rects[i].x1 - win->geometry.x;
-        int32_t copy_y = rects[i].y1 - win->geometry.y;
-        int32_t copy_w = c_min(rects[i].x2 - rects[i].x1 + 1, win->client_shm.width);
-        int32_t copy_h = c_min(rects[i].y2 - rects[i].y1 + 1, win->client_shm.height);
+        int32_t copy_x = c_max(rects[i].x1- win->geometry.x + win->geometry.move_off_x, 0);
+        int32_t copy_y = c_max(rects[i].y1 - win->geometry.y + win->geometry.move_off_y, 0);
+        int32_t copy_w = c_min(rects[i].x2 - (rects[i].x1 + win->geometry.move_off_x) + 1, win->client_shm.width);
+        int32_t copy_h = c_min(rects[i].y2 - (rects[i].y1 + win->geometry.move_off_y) + 1, win->client_shm.height);
+
+        // int32_t copy_x = rects[i].x1 - win->geometry.x;
+        // int32_t copy_y = rects[i].y1 - win->geometry.y;
+        // int32_t copy_w = rects[i].x2 - rects[i].x1;
+        // int32_t copy_h = rects[i].y2 - rects[i].y1;
 
         assert(copy_x >= 0 && copy_y >= 0);
+        assert(copy_x <= win->client_shm.width && copy_y <= win->client_shm.height);
         assert(copy_w <= win->client_shm.width && copy_h <= win->client_shm.height);
 
-        uint32_t row_offset = 0;// copy_x * 4;
+        uint32_t row_offset = copy_x * 4;
         uint32_t row_bytes = win->client_shm.width * 4;
 
         /* TODO: format conversion (e.g. RGB16 → ARGB32) when client_shm.format != ARGB32 */
@@ -299,7 +330,7 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
             uint32_t off = row_offset + (y * row_bytes);
             memcpy((uint8_t *) win->server_shm.pixels + off,
                    (const uint8_t *) src + off,
-                   row_bytes); //copy_w * 4);
+                   copy_w * 4);
         }
 
         if (state->debug_draw_rects)
@@ -313,7 +344,7 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
                           win->geometry.width, win->geometry.height,
                           0xFFFFFF00); /* yellow — full window geometry */
 
-    wl_surface_damage(win->wl_surface, 0, 0, win->geometry.width, win->geometry.height);
+    // wl_surface_damage(win->wl_surface, 0, 0, win->geometry.width, win->geometry.height);
 
     wl_surface_attach(win->wl_surface, win->server_shm.buffer, 0, 0);
 
@@ -338,6 +369,7 @@ qwswl_window_t *qwswl_allocate_window(qwswl_client_t *client)
     win->client = client;
     win->qws_id = qws_id;
     win->win_flags = -1;
+    win->fixed = false;
 
     qwswl_add_window_to_client(client, qws_id, win);
 

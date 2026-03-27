@@ -92,8 +92,8 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         /* Send Connected event */
         char display_spec[128];
-        snprintf(display_spec, sizeof(display_spec), "vnc:size=%dx%d:depth=%d", state->screen_width, 
-            state->screen_height, state->screen_depth);
+        snprintf(display_spec, sizeof(display_spec), "vnc:size=%dx%d:depth=%d:%d", 
+            state->screen_width, state->screen_height, state->screen_depth, state->qws_display);
         qws_packet_t *conn = qws_make_connected_event(
             cl->client_id, state->display_shm.shm_id, display_spec);
         qws_trace_packet(cl->client_id, conn, true);
@@ -155,9 +155,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             &((uint8_t *) incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t) + cmd->surfacekeylength * 2];
 
         if (nrects > 0) {
-            if (qws_convert_to_narrow_unicode(&surface_key, (const wchar_t *)
+            if (qws_convert_from_utf16(&surface_key, (const uint8_t *)
                     &((char *) incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t)],
-                    cmd->surfacekeylength * 2) < 0) {
+                    cmd->surfacekeylength * 2, QWS_UTF16_LE, NULL) != 0) {
                 fprintf(stderr, "[qwswayland] Illegal surface key from client %d\n",
                     cl->client_id);
                 free(surface_key);
@@ -214,15 +214,16 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
 
-        if (qws_convert_to_narrow_unicode(&region_name, (const wchar_t *)
-                incoming_pkt->raw_data, cmd->name_len * 2) < 0) {
+        if (qws_convert_from_utf16(&region_name, (const uint8_t *)
+                incoming_pkt->raw_data, cmd->name_bytes / 2, QWS_UTF16_LE, NULL) != 0) {
             fprintf(stderr, "[qwswayland] Illegal region name from client %d\n",
                 cl->client_id);
             free(region_name);
             break;
         }
-        if (qws_convert_to_narrow_unicode(&region_caption, (const wchar_t *)
-                &((char *) incoming_pkt->raw_data)[cmd->name_len * 2], cmd->caption_len * 2) < 0) {
+        if (qws_convert_from_utf16(&region_caption, (const uint8_t *)
+                &((char *) incoming_pkt->raw_data)[cmd->name_bytes],
+                cmd->caption_bytes / 2, QWS_UTF16_LE, NULL) != 0) {
             fprintf(stderr, "[qwswayland] Illegal region caption from client %d\n",
                 cl->client_id);
             free(region_name);
@@ -250,10 +251,6 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         }
 
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
-            //     const qws_rect_t window_rect =
-            // { win->geometry.x, win->geometry.y, win->geometry.width, win->geometry.height };
-            // qwswl_update_surface(state, win, &window_rect, 1);
-
         qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
         
         break;
@@ -266,8 +263,13 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
+
+        /* Unfortunately it is not really clear whether the offset is additive
+         * or not... Based on source code references found by Claude, this is likely
+         * the case and it would be also my intuition, so we well treat them
+         * as additive until further issues. */
         win->geometry.move_off_x += cmd->dx;
-        win->geometry.move_off_y += cmd->dy;
+        win->geometry.move_off_y =+ cmd->dy;
 
         break;
     }
@@ -293,6 +295,8 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
                 cmd->window, cl->fd);
             assert(false);
         }
+
+        win->fixed = cmd->is_fixed;
 
         switch (cmd->altitude) {
             case QWS_ALTITUDE_STAYS_ON_TOP:

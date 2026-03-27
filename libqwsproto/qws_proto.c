@@ -3,10 +3,12 @@
  * SPDX-License-Identifier: MIT
  */
 
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 
 #include "qws_proto.h"
- 
+#include "qws_server_helpers.h"
+#include "qws_qdatastream.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <locale.h>
@@ -21,6 +23,8 @@
 #include <sys/shm.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <ftw.h>
+#include <dirent.h>
 
 #include <assert.h>
  
@@ -320,36 +324,184 @@ size_t qws_reader_feed(qws_reader_t *r, const void *data, size_t len,
  
     return consumed;
 }
+
+/* ================================================================
+ * Display directory paths
+ * ================================================================ */
+
+int qws_display_paths_fill(int display, qws_display_paths_t *paths)
+{
+    if (snprintf(paths->base, sizeof(paths->base),
+            "/tmp/qtembedded-%d", display) >= (int)sizeof(paths->base))
+        return -1;
+
+    if (snprintf(paths->socket, sizeof(paths->socket), "%s/QtEmbedded-%d",
+            paths->base, display) >= (int)sizeof(paths->socket))
+        return -1;
+
+    if (snprintf(paths->fonts,  sizeof(paths->fonts),  "%s/fonts",
+            paths->base) >= (int)sizeof(paths->fonts))
+        return -1;
+
+    if (snprintf(paths->fontdb, sizeof(paths->fontdb), "%s/fontdb", 
+            paths->fonts) >= (int)sizeof(paths->fontdb))
+        return -1;
+    
+    return 0;
+}
+
+static int rm_entry_cb(const char *path, const struct stat *st,
+                        int typeflag, struct FTW *ftwbuf)
+{
+    (void)st; (void)typeflag; (void)ftwbuf;
+    return remove(path);
+}
+
+int qws_init_display_dir(int display, qws_display_paths_t *paths)
+{
+    if (qws_display_paths_fill(display, paths) != 0)
+        return -1;
+
+    /* Remove any stale tree; ignore error if it didn't exist. */
+    nftw(paths->base, rm_entry_cb, 16, FTW_DEPTH | FTW_PHYS);
+
+    if (mkdir(paths->base, 0600) < 0)
+        return -1;
+
+    if (mkdir(paths->fonts, 0600) < 0)
+        return -1;
+
+    return 0;
+}
+
+/* ================================================================
+ * Font database handling
+ * ================================================================ */
+
+/* Parse a QPF filename into font metadata.
+ * Format: familyname_pixelsize*10_weight[i].qpf
+ * Returns 0 on success, -1 if the filename does not match the pattern. */
+static int parse_qpf_filename(const char *basename,
+                               char *family, size_t family_sz,
+                               int *pixelsize, int *weight, bool *italic)
+{
+    const char *u0 = strchr(basename, '_');
+    if (!u0) return -1;
+    const char *u1 = strchr(u0 + 1, '_');
+    if (!u1) return -1;
+
+    *pixelsize = atoi(u0 + 1) / 10;
+
+    /* u2 = next '_' after u1, or '.' if there is none */
+    const char *u2 = strchr(u1 + 1, '_');
+    const char *u3 = strchr(u1 + 1, '.');
+    if (!u2) u2 = u3;
+    if (!u2) return -1;
+
+    *italic = (u2 > u1 + 1) && (*(u2 - 1) == 'i');
+
+    size_t wlen = (size_t)(u2 - u1 - 1) - (*italic ? 1 : 0);
+    char wbuf[16];
+    if (wlen == 0 || wlen >= sizeof(wbuf)) return -1;
+    memcpy(wbuf, u1 + 1, wlen);
+    wbuf[wlen] = '\0';
+    *weight = atoi(wbuf);
+
+    size_t flen = (size_t)(u0 - basename);
+    if (flen == 0 || flen >= family_sz) return -1;
+    memcpy(family, basename, flen);
+    family[flen] = '\0';
+    return 0;
+}
+
+/* Write one QDataStream font entry (see qfontdatabase_qws.cpp cache format). */
+static int write_font_entry(FILE *f,
+                             const char *family, const char *foundry,
+                             int32_t weight, bool italic, int32_t pixelsize,
+                             const char *filepath)
+{
+    return qws_fwrite_qdatastream_qstring(f, family)                          /* familyname      */
+        || qws_fwrite_qdatastream_qstring(f, foundry)                         /* foundryname     */
+        || qws_fwrite_qdatastream_int32(f, weight)                            /* weight          */
+        || qws_fwrite_qdatastream_uint8(f, italic ? 1u : 0u)                  /* italic          */
+        || qws_fwrite_qdatastream_int32(f, pixelsize)                         /* pixelSize       */
+        || qws_fwrite_qdatastream_bytearray(f, filepath, (int32_t)strlen(filepath)) /* file      */
+        || qws_fwrite_qdatastream_int32(f, 0)                                 /* fileIndex       */
+        || qws_fwrite_qdatastream_uint8(f, 1u)                                /* antialiased     */
+        || qws_fwrite_qdatastream_uint8(f, 0u);                               /* writingSystemCount=0 */
+}
+
+int qws_build_font_database(const char *fontdb_path)
+{
+    FILE *f = fopen(fontdb_path, "wb");
+    if (!f)
+        return -1;
+
+    /* Two header bytes: cache version + QDataStream version */
+    uint8_t hdr[2] = { QWS_FONTDB_VERSION, QWS_FONTDB_DATASTREAM_VERSION };
+    if (fwrite(hdr, 1, sizeof(hdr), f) != sizeof(hdr))
+        goto err;
+
+    /* QDataStream QString: font directory path */
+    if (qws_fwrite_qdatastream_qstring(f, QWS_FONTDB_FONT_PATH) != 0)
+        goto err;
+
+    /* Scan font directory for *.qpf files and write one entry per font */
+    DIR *dir = opendir(QWS_FONTDB_FONT_PATH);
+    if (dir) {
+        struct dirent *de;
+        while ((de = readdir(dir)) != NULL) {
+            const char *name = de->d_name;
+            size_t nlen = strlen(name);
+            if (nlen < 5 || strcmp(name + nlen - 4, ".qpf") != 0)
+                continue;
+
+            char family[128];
+            int pixelsize, weight;
+            bool italic;
+            if (parse_qpf_filename(name, family, sizeof(family),
+                                   &pixelsize, &weight, &italic) != 0)
+                continue;
+
+            char abspath[PATH_MAX];
+            if (snprintf(abspath, sizeof(abspath), "%s/%s",
+                         QWS_FONTDB_FONT_PATH, name) >= (int)sizeof(abspath))
+                continue;
+
+            if (write_font_entry(f, family, "qt", weight, italic,
+                                 pixelsize, abspath) != 0) {
+                closedir(dir);
+                goto err;
+            }
+        }
+        closedir(dir);
+    }
+
+    /* Null-QString terminator (-1) signals end of font list */
+    if (qws_fwrite_qdatastream_int32(f, -1) != 0)
+        goto err;
+
+    /* Empty fallback-families QStringList (count = 0) */
+    if (qws_fwrite_qdatastream_int32(f, 0) != 0)
+        goto err;
+
+    fclose(f);
+    return 0;
+
+err:
+    fclose(f);
+    return -1;
+}
  
 /* ================================================================
  * Socket transport
  * ================================================================ */
  
-int qws_socket_path(int display, char *buf, size_t buflen)
-{
-    int n = snprintf(buf, buflen,
-                     "/tmp/qtembedded-%d/QtEmbedded-%d",
-                     display, display);
-    return (n > 0 && (size_t)n < buflen) ? 0 : -1;
-}
- 
 int qws_server_listen(const char *socket_path)
 {
     if (!socket_path)
         return -1;
- 
-    /* Create the directory if needed */
-    {
-        char dir[PATH_MAX];
-        strncpy(dir, socket_path, sizeof(dir) - 1);
-        dir[sizeof(dir) - 1] = '\0';
-        char *slash = strrchr(dir, '/');
-        if (slash) {
-            *slash = '\0';
-            mkdir(dir, 0700);
-        }
-    }
- 
+
     /* Remove stale socket */
     unlink(socket_path);
  

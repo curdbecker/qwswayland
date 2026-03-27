@@ -111,25 +111,10 @@ int main(int argc, char *argv[])
     qws_trace_set_level(verbose);
     qws_trace_set_exclude_mask(exclude_cmd_mask, exclude_evt_mask);
 
-    /* Resolve socket paths */
-    char listen_path[256];
-    if (qws_socket_path(listen_display, listen_path, sizeof(listen_path)) != 0) {
-        fprintf(stderr, "Failed to build listen socket path for display %d\n",
-                listen_display);
-        return 1;
-    }
-
-    char upstream_path[256];
-    if (qws_socket_path(upstream_display, upstream_path, sizeof(upstream_path)) != 0) {
-        fprintf(stderr, "Failed to build upstream socket path for display %d\n",
-                upstream_display);
-        return 1;
-    }
-
     fprintf(stderr, "qws_trace_proxy: listen=:%d  upstream=:%d  verbose=%d\n",
             listen_display, upstream_display, verbose);
 
-    if (qwstrace_init(&g_state, listen_path, upstream_path) != 0) {
+    if (qwstrace_init(&g_state, listen_display, upstream_display) != 0) {
         fprintf(stderr, "Initialization failed. Exiting.\n");
         return 1;
     }
