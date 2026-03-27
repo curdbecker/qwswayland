@@ -219,6 +219,24 @@ static void print_window_flags(FILE *fp, uint32_t flags)
     }
 }
 
+static void print_utf16le_field(FILE *fp, const char *field_name,
+        const uint8_t *field_value, size_t field_len) {
+    char *value;
+
+    if (!field_value || field_len < 0) {
+        fprintf(fp, "      %s=<not present>\n", field_name);
+        return;
+    }
+
+    if (qws_convert_from_utf16(&value,
+            field_value, field_len, QWS_UTF16_LE, NULL) != 0) {
+        fprintf(fp, "      %s=<invalid>\n", field_name);
+    } else {
+        fprintf(fp, "      %s=\"%s\"\n", field_name, value);
+        free(value);
+    }
+}
+
 /* ================================================================
  * Event field decoder
  * ================================================================ */
@@ -227,7 +245,6 @@ void qws_trace_decode_event(FILE *fp, int32_t type,
                               const void *simple_data, int32_t simple_len,
                               const void *raw_data, int32_t raw_len)
 {
-    (void)raw_data;
 
     switch (type) {
 
@@ -347,6 +364,94 @@ void qws_trace_decode_event(FILE *fp, int32_t type,
         break;
     }
 
+    case QWS_EVT_SELECTION_CLEAR: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_selection_clear_t)) {
+            const qws_evt_selection_clear_t *d = simple_data;
+            fprintf(fp, "      window=%d\n", d->window);
+        }
+        break;
+    }
+
+    case QWS_EVT_SELECTION_REQUEST: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_selection_request_t)) {
+            const qws_evt_selection_request_t *d = simple_data;
+            fprintf(fp, "      window=%d, requestor=%d, property=%d, mimetypes=%d\n",
+                    d->window, d->requestor, d->property, d->mimetypes);
+        }
+        break;
+    }
+
+    case QWS_EVT_SELECTION_NOTIFY: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_selection_notify_t)) {
+            const qws_evt_selection_notify_t *d = simple_data;
+            fprintf(fp, "      window=%d, requestor=%d, property=%d, mimetype=%d\n",
+                    d->window, d->requestor, d->property, d->mimetype);
+        }
+        break;
+    }
+
+    case QWS_EVT_QCOP_MESSAGE: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_qcop_message_t)) {
+            const qws_evt_qcop_message_t *d = simple_data;
+            fprintf(fp, "      is_response=%d, lchannel=%d, lmessage=%d, ldata=%d\n",
+                    d->is_response, d->lchannel, d->lmessage, d->ldata);
+            if (raw_data && raw_len > 0) {
+                size_t ch_bytes = (size_t)d->lchannel * 2;
+                print_utf16le_field(fp, "channel", raw_data, (size_t)d->lchannel);
+                if ((size_t)raw_len >= ch_bytes)
+                    print_utf16le_field(fp, "message",
+                        &((const uint8_t *)raw_data)[ch_bytes], (size_t)d->lmessage);
+            }
+        }
+        break;
+    }
+
+    case QWS_EVT_IM_EVENT: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_im_event_t)) {
+            const qws_evt_im_event_t *d = simple_data;
+            fprintf(fp, "      window=%d, replace_from=%d, replace_length=%d, "
+                    "data_len=%d\n",
+                    d->window, d->replace_from, d->replace_length, raw_len);
+        }
+        break;
+    }
+
+    case QWS_EVT_IM_QUERY: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_im_query_t)) {
+            const qws_evt_im_query_t *d = simple_data;
+            fprintf(fp, "      window=%d, property=%d\n", d->window, d->property);
+        }
+        break;
+    }
+
+    case QWS_EVT_IM_INIT: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_im_init_t)) {
+            const qws_evt_im_init_t *d = simple_data;
+            fprintf(fp, "      window=%d, existence=%d (%s)\n",
+                    d->window, d->existence,
+                    d->existence ? "created" : "destroyed");
+        }
+        break;
+    }
+
+    case QWS_EVT_FONT: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_font_t)) {
+            const qws_evt_font_t *d = simple_data;
+            fprintf(fp, "      type=%s\n",
+                    d->type == FONT_REMOVED ? "FontRemoved" : "unknown");
+        }
+        break;
+    }
+
+    case QWS_EVT_SCREEN_TRANSFORM: {
+        if (simple_len >= (int32_t)sizeof(qws_evt_screen_transform_t)) {
+            const qws_evt_screen_transform_t *d = simple_data;
+            fprintf(fp, "      screen=%d, transformation=%d\n",
+                    d->screen, d->transformation);
+        }
+        break;
+    }
+
     default:
         if (simple_len > 0 && simple_data) {
             /* Generic: show first int which is usually window id */
@@ -360,24 +465,6 @@ void qws_trace_decode_event(FILE *fp, int32_t type,
 /* ================================================================
  * Command field decoder
  * ================================================================ */
-
-static void print_utf16le_field(FILE *fp, const char *field_name,
-        const uint8_t *field_value, size_t field_len) {
-    char *value;
-
-    if (!field_value || field_len < 0) {
-        fprintf(fp, "      %s=<not present>\n", field_name);
-        return;
-    }
-
-    if (qws_convert_from_utf16(&value,
-            field_value, field_len, QWS_UTF16_LE, NULL) != 0) {
-        fprintf(fp, "      %s=<invalid>\n", field_name);
-    } else {
-        fprintf(fp, "      %s=\"%s\"\n", field_name, value);
-        free(value);
-    }
-}
 
 void qws_trace_decode_command(FILE *fp, int32_t type,
                                const void *simple_data, int32_t simple_len,
@@ -640,6 +727,65 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
 
     case QWS_CMD_SHUTDOWN: {
         fprintf(fp, "      (no payload)\n");
+        break;
+    }
+
+    case QWS_CMD_SET_SELECTION_OWNER: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_set_selection_owner_t)) {
+            const qws_cmd_set_selection_owner_t *d = simple_data;
+            fprintf(fp, "      window=%d, time=%02d:%02d:%02d.%03d\n",
+                    d->windowid, d->hour, d->minute, d->sec, d->ms);
+        }
+        break;
+    }
+
+    case QWS_CMD_CONVERT_SELECTION: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_convert_selection_t)) {
+            const qws_cmd_convert_selection_t *d = simple_data;
+            fprintf(fp, "      requestor=%d, selection=%d, mimetypes=%d\n",
+                    d->requestor, d->selection, d->mimetypes);
+        }
+        break;
+    }
+
+    case QWS_CMD_POSITION_CURSOR: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_position_cursor_t)) {
+            const qws_cmd_position_cursor_t *d = simple_data;
+            fprintf(fp, "      pos=(%d,%d)\n", d->new_x, d->new_y);
+        }
+        break;
+    }
+
+    case QWS_CMD_PLAY_SOUND: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_play_sound_t)) {
+            const qws_cmd_play_sound_t *d = simple_data;
+            fprintf(fp, "      window=%d\n", d->windowid);
+            print_utf16le_field(fp, "filename", raw_data, (size_t)(raw_len / 2));
+        }
+        break;
+    }
+
+    case QWS_CMD_EMBED: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_embed_t)) {
+            const qws_cmd_embed_t *d = simple_data;
+            const char *type_str =
+                (d->type == QWS_EMBED_START)  ? "Start"  :
+                (d->type == QWS_EMBED_STOP)   ? "Stop"   :
+                (d->type == QWS_EMBED_REGION) ? "Region" : "unknown";
+            fprintf(fp, "      embedder=%d, embedded=%d, type=%s(%d), nrects=%d\n",
+                    d->embedder, d->embedded, type_str, d->type, d->nrects);
+            if (raw_data && d->nrects > 0)
+                print_rects(fp, (const qws_rect_t *)raw_data, d->nrects);
+        }
+        break;
+    }
+
+    case QWS_CMD_SCREEN_TRANSFORM: {
+        if (simple_len >= (int32_t)sizeof(qws_cmd_screen_transform_t)) {
+            const qws_cmd_screen_transform_t *d = simple_data;
+            fprintf(fp, "      screen=%d, transformation=%d\n",
+                    d->screen, d->transformation);
+        }
         break;
     }
 

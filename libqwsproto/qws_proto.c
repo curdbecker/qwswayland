@@ -92,15 +92,15 @@ int32_t qws_event_simple_len(int32_t type)
     case QWS_EVT_MAX_WINDOW_RECT:   return (int32_t)sizeof(qws_evt_max_window_rect_t);
     case QWS_EVT_WINDOW_OPERATION:  return (int32_t)sizeof(qws_evt_window_operation_t);
     case QWS_EVT_EMBED:             return (int32_t)sizeof(qws_evt_embed_t);
-    case QWS_EVT_SELECTION_CLEAR:   return 0; /* TODO: add struct if needed */
-    case QWS_EVT_SELECTION_REQUEST: return 0;
-    case QWS_EVT_SELECTION_NOTIFY:  return 0;
-    case QWS_EVT_QCOP_MESSAGE:      return 0;
-    case QWS_EVT_IM_EVENT:          return 0;
-    case QWS_EVT_IM_QUERY:          return 0;
-    case QWS_EVT_IM_INIT:           return 0;
-    case QWS_EVT_FONT:              return 0;
-    case QWS_EVT_SCREEN_TRANSFORM:  return 0;
+    case QWS_EVT_SELECTION_CLEAR:   return (int32_t)sizeof(qws_evt_selection_clear_t);
+    case QWS_EVT_SELECTION_REQUEST: return (int32_t)sizeof(qws_evt_selection_request_t);
+    case QWS_EVT_SELECTION_NOTIFY:  return (int32_t)sizeof(qws_evt_selection_notify_t);
+    case QWS_EVT_QCOP_MESSAGE:      return (int32_t)sizeof(qws_evt_qcop_message_t);
+    case QWS_EVT_IM_EVENT:          return (int32_t)sizeof(qws_evt_im_event_t);
+    case QWS_EVT_IM_QUERY:          return (int32_t)sizeof(qws_evt_im_query_t);
+    case QWS_EVT_IM_INIT:           return (int32_t)sizeof(qws_evt_im_init_t);
+    case QWS_EVT_FONT:              return (int32_t)sizeof(qws_evt_font_t);
+    case QWS_EVT_SCREEN_TRANSFORM:  return (int32_t)sizeof(qws_evt_screen_transform_t);
     default:                         return -1;
     }
 }
@@ -117,16 +117,16 @@ int32_t qws_command_simple_len(int32_t type)
     case QWS_CMD_ADD_PROPERTY:       return (int32_t)sizeof(qws_cmd_add_property_t);
     case QWS_CMD_REMOVE_PROPERTY:    return (int32_t)sizeof(qws_cmd_remove_property_t);
     case QWS_CMD_GET_PROPERTY:       return (int32_t)sizeof(qws_cmd_get_property_t);
-    case QWS_CMD_SET_SELECTION_OWNER:return 0;
-    case QWS_CMD_CONVERT_SELECTION:  return 0;
+    case QWS_CMD_SET_SELECTION_OWNER:return (int32_t)sizeof(qws_cmd_set_selection_owner_t);
+    case QWS_CMD_CONVERT_SELECTION:  return (int32_t)sizeof(qws_cmd_convert_selection_t);
     case QWS_CMD_REQUEST_FOCUS:      return (int32_t)sizeof(qws_cmd_request_focus_t);
     case QWS_CMD_CHANGE_ALTITUDE:    return (int32_t)sizeof(qws_cmd_change_altitude_t);
     case QWS_CMD_SET_OPACITY:        return (int32_t)sizeof(qws_cmd_set_opacity_t);
     case QWS_CMD_DEFINE_CURSOR:      return (int32_t)sizeof(qws_cmd_define_cursor_t);
     case QWS_CMD_SELECT_CURSOR:      return (int32_t)sizeof(qws_cmd_select_cursor_t);
-    case QWS_CMD_POSITION_CURSOR:    return 0;
+    case QWS_CMD_POSITION_CURSOR:    return (int32_t)sizeof(qws_cmd_position_cursor_t);
     case QWS_CMD_GRAB_MOUSE:         return (int32_t)sizeof(qws_cmd_grab_mouse_t);
-    case QWS_CMD_PLAY_SOUND:         return 0; /* TODO: add struct if needed */
+    case QWS_CMD_PLAY_SOUND:         return (int32_t)sizeof(qws_cmd_play_sound_t);
     case QWS_CMD_QCOP_REGISTER:      return (int32_t)sizeof(qws_cmd_qcop_register_t);
     case QWS_CMD_QCOP_SEND:          return (int32_t)sizeof(qws_cmd_qcop_send_t);
     case QWS_CMD_REGION_NAME:        return (int32_t)sizeof(qws_cmd_region_name_t);
@@ -134,11 +134,11 @@ int32_t qws_command_simple_len(int32_t type)
     case QWS_CMD_GRAB_KEYBOARD:      return (int32_t)sizeof(qws_cmd_grab_keyboard_t);
     case QWS_CMD_REPAINT_REGION:     return (int32_t)sizeof(qws_cmd_repaint_region_t);
     case QWS_CMD_IM_MOUSE:           return (int32_t)sizeof(qws_cmd_im_mouse_t);
-    case QWS_CMD_IM_UPDATE:          return (int32_t)sizeof(qws_cmd_im_update_t);;
+    case QWS_CMD_IM_UPDATE:          return (int32_t)sizeof(qws_cmd_im_update_t);
     case QWS_CMD_IM_RESPONSE:        return (int32_t)sizeof(qws_cmd_im_response_t);
-    case QWS_CMD_EMBED:              return 0; /* TODO: add struct if needed */
+    case QWS_CMD_EMBED:              return (int32_t)sizeof(qws_cmd_embed_t);
     case QWS_CMD_FONT:               return (int32_t)sizeof(qws_cmd_font_t);
-    case QWS_CMD_SCREEN_TRANSFORM:   return 0;
+    case QWS_CMD_SCREEN_TRANSFORM:   return (int32_t)sizeof(qws_cmd_screen_transform_t);
     default:                          return -1;
     }
 }
@@ -688,6 +688,16 @@ int qws_shm_attach_sysv(qws_shm_t *shm, int shm_id)
         shm->size = -1;
         return -1;
     }
+
+    shm->size = ds.shm_segsz;
+    return 0;
+}
+
+int qws_shm_update_sysv(qws_shm_t *shm)
+{
+    struct shmid_ds ds;
+    if (shmctl(shm->shm_id, IPC_STAT, &ds) < 0)
+        return -1;
 
     shm->size = ds.shm_segsz;
     return 0;

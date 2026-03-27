@@ -213,6 +213,55 @@ f.im_type       = ProtoField.int32 ("qws.im_type",      "IM Update Type",   base
                     {[0]="FocusIn", [1]="FocusOut", [2]="Update", [3]="Dictation"})
 f.widget_id     = ProtoField.int32 ("qws.widget_id",    "Widget ID",        base.DEC)
 
+-- SelectionClear / SelectionRequest / SelectionNotify events
+f.requestor      = ProtoField.int32("qws.requestor",     "Requestor Window",  base.DEC)
+f.mimetypes      = ProtoField.int32("qws.mimetypes",     "MIME Types Prop",   base.DEC)
+f.mimetype       = ProtoField.int32("qws.mimetype",      "MIME Type Prop",    base.DEC)
+
+-- QCopMessage event
+f.is_response    = ProtoField.int32("qws.is_response",   "Is Response",       base.DEC,
+                     {[0]="Request", [1]="Response"})
+f.lchannel       = ProtoField.int32("qws.lchannel",      "Channel Len (chars)",base.DEC)
+f.lmessage       = ProtoField.int32("qws.lmessage",      "Message Len (chars)",base.DEC)
+f.ldata          = ProtoField.int32("qws.ldata",         "Data Len (bytes)",  base.DEC)
+
+-- IMEvent / IMInit events
+f.replace_from   = ProtoField.int32("qws.replace_from",  "Replace From",      base.DEC)
+f.replace_length = ProtoField.int32("qws.replace_length","Replace Length",    base.DEC)
+f.existence      = ProtoField.int32("qws.existence",     "IM Exists",         base.DEC,
+                     {[0]="Destroyed", [1]="Created"})
+
+-- ScreenTransform event + command
+f.screen         = ProtoField.int32("qws.screen",        "Screen Index",      base.DEC)
+f.transformation = ProtoField.int32("qws.transformation","Transformation",    base.DEC)
+
+-- SetSelectionOwner command
+f.sel_windowid   = ProtoField.int32("qws.sel_windowid",  "Window ID",         base.DEC)
+f.hour           = ProtoField.int32("qws.hour",          "Hour",              base.DEC)
+f.minute         = ProtoField.int32("qws.minute",        "Minute",            base.DEC)
+f.sec            = ProtoField.int32("qws.sec",           "Second",            base.DEC)
+f.ms             = ProtoField.int32("qws.ms",            "Millisecond",       base.DEC)
+
+-- ConvertSelection command
+f.sel_selection  = ProtoField.int32("qws.sel_selection", "Selection Prop",    base.DEC)
+
+-- PositionCursor command
+f.new_x          = ProtoField.int32("qws.new_x",         "New X",             base.DEC)
+f.new_y          = ProtoField.int32("qws.new_y",         "New Y",             base.DEC)
+
+-- PlaySound command
+f.sound_filename = ProtoField.string("qws.sound_filename","Filename")
+
+-- Embed command
+f.embedder       = ProtoField.int32("qws.embedder",      "Embedder Window",   base.DEC)
+f.embedded       = ProtoField.int32("qws.embedded",      "Embedded Window",   base.DEC)
+f.embed_type     = ProtoField.int32("qws.embed_type",    "Embed Type",        base.DEC,
+                     {[1]="Start", [2]="Stop", [4]="Region"})
+
+-- Font event
+f.font_type      = ProtoField.int32("qws.font_type",     "Font Event Type",   base.DEC,
+                     {[0]="FontRemoved"})
+
 -- -----------------------------------------------------------------------
 -- Type name tables — mirror qws_proto.h enums
 -- -----------------------------------------------------------------------
@@ -259,16 +308,16 @@ local SIMPLE_LEN = {
         [7]  = 8,   -- AddProperty       {window,property}
         [8]  = 8,   -- RemoveProperty    {window,property}
         [9]  = 8,   -- GetProperty       {window,property}
-        [10] = 0,   -- SetSelectionOwner
-        [11] = 0,   -- ConvertSelection
+        [10] = 20,  -- SetSelectionOwner  {windowid,hour,minute,sec,ms}
+        [11] = 12,  -- ConvertSelection   {requestor,selection,mimetypes}
         [12] = 8,   -- RequestFocus      {window,flag}
         [13] = 12,  -- ChangeAltitude    {window,altitude,is_fixed}
         [14] = 8,   -- SetOpacity        {window,opacity}
         [15] = 24,  -- DefineCursor      {window,width,height,hot_x,hot_y,id}
         [16] = 8,   -- SelectCursor      {window,cursor_id}
-        [17] = 0,   -- PositionCursor
+        [17] = 8,   -- PositionCursor     {new_x,new_y}
         [18] = 8,   -- GrabMouse         {window,grab}
-        [19] = 0,   -- PlaySound
+        [19] = 4,   -- PlaySound         {windowid}
         [20] = 4,   -- QCopRegister      {dummy}
         [21] = 12,  -- QCopSend          {channel_len,message_len,data_len}
         [22] = 12,  -- RegionName        {window,name_len,caption_len}
@@ -278,9 +327,9 @@ local SIMPLE_LEN = {
         [26] = 12,  -- IMMouse           {window,index,state}
         [27] = 12,  -- IMUpdate          {window,type,widget_id}
         [28] = 8,   -- IMResponse        {window,type}
-        [29] = 0,   -- Embed
+        [29] = 16,  -- Embed             {embedder,embedded,type,nrects}
         [30] = 4,   -- Font              {type}
-        [31] = 0,   -- ScreenTransform
+        [31] = 8,   -- ScreenTransform   {screen,transformation}
     },
     [1] = {  -- events (qws_evt_*_t)
         [0]  = 0,   -- NoEvent
@@ -292,18 +341,18 @@ local SIMPLE_LEN = {
         [6]  = 8,   -- Creation          {object_id,count}
         [7]  = 12,  -- PropertyNotify    {window,property,state}
         [8]  = 12,  -- PropertyReply     {window,property,len}
-        [9]  = 0,   -- SelectionClear
-        [10] = 0,   -- SelectionRequest
-        [11] = 0,   -- SelectionNotify
+        [9]  = 4,   -- SelectionClear     {window}
+        [10] = 16,  -- SelectionRequest   {window,requestor,property,mimetypes}
+        [11] = 16,  -- SelectionNotify    {window,requestor,property,mimetype}
         [12] = 20,  -- MaxWindowRect     {window,rect{x1,y1,x2,y2}}
-        [13] = 0,   -- QCopMessage
+        [13] = 16,  -- QCopMessage        {is_response,lchannel,lmessage,ldata}
         [14] = 8,   -- WindowOperation   {window,operation}
-        [15] = 0,   -- IMEvent
-        [16] = 0,   -- IMQuery
-        [17] = 0,   -- IMInit
+        [15] = 12,  -- IMEvent            {window,replace_from,replace_length}
+        [16] = 8,   -- IMQuery            {window,property}
+        [17] = 8,   -- IMInit             {window,existence}
         [18] = 8,   -- Embed             {window,type}
-        [19] = 0,   -- Font
-        [20] = 0,   -- ScreenTransform
+        [19] = 4,   -- Font               {type}
+        [20] = 8,   -- ScreenTransform    {screen,transformation}
     },
 }
 
@@ -455,6 +504,29 @@ local function decode_simple(subtree, tvb, offset, direction, type_id)
             subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
             subtree:add_le(f.im_type,   tvb(o, 4)); o = o + 4
             subtree:add_le(f.widget_id, tvb(o, 4))
+        elseif type_id == 10 then       -- SetSelectionOwner
+            subtree:add_le(f.sel_windowid, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.hour,         tvb(o, 4)); o = o + 4
+            subtree:add_le(f.minute,       tvb(o, 4)); o = o + 4
+            subtree:add_le(f.sec,          tvb(o, 4)); o = o + 4
+            subtree:add_le(f.ms,           tvb(o, 4))
+        elseif type_id == 11 then       -- ConvertSelection
+            subtree:add_le(f.requestor,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.sel_selection,tvb(o, 4)); o = o + 4
+            subtree:add_le(f.mimetypes,    tvb(o, 4))
+        elseif type_id == 17 then       -- PositionCursor
+            subtree:add_le(f.new_x, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.new_y, tvb(o, 4))
+        elseif type_id == 19 then       -- PlaySound
+            subtree:add_le(f.sel_windowid, tvb(o, 4))
+        elseif type_id == 29 then       -- Embed
+            subtree:add_le(f.embedder,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.embedded,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.embed_type, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.nrects,     tvb(o, 4))
+        elseif type_id == 31 then       -- ScreenTransform
+            subtree:add_le(f.screen,         tvb(o, 4)); o = o + 4
+            subtree:add_le(f.transformation, tvb(o, 4))
         end
     else
         -- Events
@@ -500,6 +572,38 @@ local function decode_simple(subtree, tvb, offset, direction, type_id)
         elseif type_id == 18 then       -- Embed
             subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
             subtree:add_le(f.operation, tvb(o, 4))
+        elseif type_id == 9 then        -- SelectionClear
+            subtree:add_le(f.window, tvb(o, 4))
+        elseif type_id == 10 then       -- SelectionRequest
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.requestor, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.property,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.mimetypes, tvb(o, 4))
+        elseif type_id == 11 then       -- SelectionNotify
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.requestor, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.property,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.mimetype,  tvb(o, 4))
+        elseif type_id == 13 then       -- QCopMessage
+            subtree:add_le(f.is_response, tvb(o, 4)); o = o + 4
+            subtree:add_le(f.lchannel,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.lmessage,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.ldata,       tvb(o, 4))
+        elseif type_id == 15 then       -- IMEvent
+            subtree:add_le(f.window,         tvb(o, 4)); o = o + 4
+            subtree:add_le(f.replace_from,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.replace_length, tvb(o, 4))
+        elseif type_id == 16 then       -- IMQuery
+            subtree:add_le(f.window,   tvb(o, 4)); o = o + 4
+            subtree:add_le(f.property, tvb(o, 4))
+        elseif type_id == 17 then       -- IMInit
+            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
+            subtree:add_le(f.existence, tvb(o, 4))
+        elseif type_id == 19 then       -- Font
+            subtree:add_le(f.font_type, tvb(o, 4))
+        elseif type_id == 20 then       -- ScreenTransform
+            subtree:add_le(f.screen,         tvb(o, 4)); o = o + 4
+            subtree:add_le(f.transformation, tvb(o, 4))
         end
     end
 end
@@ -582,8 +686,8 @@ local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
 
         elseif type_id == 21 then
             -- QCopSend: channel (ch_len UTF-16LE) + message (msg_len UTF-16LE) + data
-            local ch_bytes  = tvb(sd,     4):le_int() 
-            local msg_bytes = tvb(sd + 4, 4):le_int() 
+            local ch_bytes  = tvb(sd,     4):le_int()
+            local msg_bytes = tvb(sd + 4, 4):le_int()
             local dat_len   = tvb(sd + 8, 4):le_int()
             if ch_bytes  > 0 and raw_len >= ch_bytes then
                 add_utf16le(root, f.qcop_channel, tvb(o, ch_bytes))
@@ -594,6 +698,17 @@ local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
             local dat_off = ch_bytes + msg_bytes
             if dat_len > 0 and raw_len >= dat_off + dat_len then
                 root:add(f.raw_data, tvb(o + dat_off, dat_len))
+            end
+
+        elseif type_id == 19 then
+            -- PlaySound: rawData = UTF-16LE filename
+            add_utf16le(root, f.sound_filename, tvb(o, raw_len))
+
+        elseif type_id == 29 then
+            -- Embed: rawData = nrects × QRect (x,y,w,h as int32 LE each)
+            local nrects = tvb(sd + 12, 4):le_int()
+            if nrects > 0 and raw_len >= nrects * RECT_SIZE then
+                decode_rects(root, tvb, o, nrects, "Embed Rectangles")
             end
 
         else
@@ -616,6 +731,28 @@ local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
             if nrects > 0 and raw_len >= nrects * RECT_SIZE then
                 decode_rects(root, tvb, o, nrects, "Rectangles")
             end
+
+        elseif type_id == 13 then
+            -- QCopMessage: channel (UTF-16LE) + message (UTF-16LE) + opaque data
+            local lchannel  = tvb(sd + 4,  4):le_int()
+            local lmessage  = tvb(sd + 8,  4):le_int()
+            local ldata     = tvb(sd + 12, 4):le_int()
+            local ch_bytes  = lchannel * 2
+            local msg_bytes = lmessage * 2
+            if ch_bytes > 0 and raw_len >= ch_bytes then
+                add_utf16le(root, f.qcop_channel, tvb(o, ch_bytes))
+            end
+            if msg_bytes > 0 and raw_len >= ch_bytes + msg_bytes then
+                add_utf16le(root, f.qcop_message, tvb(o + ch_bytes, msg_bytes))
+            end
+            local dat_off = ch_bytes + msg_bytes
+            if ldata > 0 and raw_len >= dat_off + ldata then
+                root:add(f.raw_data, tvb(o + dat_off, ldata))
+            end
+
+        elseif type_id == 15 or type_id == 17 then
+            -- IMEvent / IMInit: opaque serialised IM state blob
+            root:add(f.raw_data, tvb(o, raw_len))
 
         else
             root:add(f.raw_data, tvb(o, raw_len))  -- generic fallback

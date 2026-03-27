@@ -348,6 +348,57 @@ typedef struct {
     int32_t len;
 } qws_evt_property_reply_t;
  
+/* QWS_EVT_SELECTION_CLEAR (9) */
+typedef struct {
+    int32_t window;
+} qws_evt_selection_clear_t;
+
+/* QWS_EVT_SELECTION_REQUEST (10) */
+typedef struct {
+    int32_t window;
+    int32_t requestor;   /* window requesting ownership */
+    int32_t property;    /* property on requestor for the data */
+    int32_t mimetypes;   /* property carrying MIME-type list */
+} qws_evt_selection_request_t;
+
+/* QWS_EVT_SELECTION_NOTIFY (11) */
+typedef struct {
+    int32_t window;
+    int32_t requestor;   /* window that wanted the selection */
+    int32_t property;    /* property of requestor with the data */
+    int32_t mimetype;    /* property with the chosen MIME type */
+} qws_evt_selection_notify_t;
+
+/* QWS_EVT_QCOP_MESSAGE (13)
+ * rawData = lchannel UTF-16LE QChars + lmessage UTF-16LE QChars + ldata bytes */
+typedef struct {
+    int32_t is_response;  /* bool (int32) */
+    int32_t lchannel;     /* character length of channel name */
+    int32_t lmessage;     /* character length of message name */
+    int32_t ldata;        /* byte length of data payload */
+} qws_evt_qcop_message_t;
+
+/* QWS_EVT_IM_EVENT (15)
+ * rawData = serialised input method state */
+typedef struct {
+    int32_t window;
+    int32_t replace_from;
+    int32_t replace_length;
+} qws_evt_im_event_t;
+
+/* QWS_EVT_IM_QUERY (16) */
+typedef struct {
+    int32_t window;
+    int32_t property;
+} qws_evt_im_query_t;
+
+/* QWS_EVT_IM_INIT (17)
+ * rawData = serialised IM context */
+typedef struct {
+    int32_t window;
+    int32_t existence;   /* 1 = IM exists, 0 = destroyed */
+} qws_evt_im_init_t;
+
 /* QWS_EVT_EMBED */
 typedef struct {
     int32_t window;
@@ -361,6 +412,12 @@ typedef enum {
 typedef struct {
     int32_t type;   /* only a single event defined - see above */
 } qws_evt_font_t;
+
+/* QWS_EVT_SCREEN_TRANSFORM (20) */
+typedef struct {
+    int32_t screen;
+    int32_t transformation;
+} qws_evt_screen_transform_t;
 
 /* -----------------------------------------------------------
  * Command payloads (client → server simpleData structs)
@@ -480,6 +537,22 @@ typedef struct {
     int32_t property;
 } qws_cmd_get_property_t;
  
+/* QWS_CMD_SET_SELECTION_OWNER (10) */
+typedef struct {
+    int32_t windowid;
+    int32_t hour;
+    int32_t minute;
+    int32_t sec;
+    int32_t ms;
+} qws_cmd_set_selection_owner_t;
+
+/* QWS_CMD_CONVERT_SELECTION (11) */
+typedef struct {
+    int32_t requestor;   /* window requesting the selection */
+    int32_t selection;   /* property on requestor for the data */
+    int32_t mimetypes;   /* property carrying MIME-type list */
+} qws_cmd_convert_selection_t;
+
 /* QWS_CMD_GRAB_MOUSE */
 typedef struct {
     int32_t window;
@@ -508,6 +581,12 @@ typedef struct {
     int32_t window;
     int32_t cursor_id;
 } qws_cmd_select_cursor_t;
+
+/* QWS_CMD_POSITION_CURSOR (17) */
+typedef struct {
+    int32_t new_x;
+    int32_t new_y;
+} qws_cmd_position_cursor_t;
  
 /* QWS_CMD_REPAINT_REGION
  * rawData = array of qws_rect_t */
@@ -524,6 +603,12 @@ typedef struct {
 typedef struct {
     /* intentionally empty — QWSShutdownCommand has no payload fields */
 } qws_cmd_shutdown_t;
+
+/* QWS_CMD_PLAY_SOUND (19)
+ * rawData = filename as UTF-16LE QChars */
+typedef struct {
+    int32_t windowid;
+} qws_cmd_play_sound_t;
 
 /* QWS_CMD_QCOP_REGISTER: rawData = channel name (UTF-16LE) */
 typedef struct {
@@ -565,6 +650,22 @@ typedef struct {
     int32_t state;      /* IMMouse enum value */
 } qws_cmd_im_mouse_t;
  
+/* Embed operation type (QWSEmbedCommand::Type) */
+enum qws_embed_type {
+    QWS_EMBED_START  = 1,
+    QWS_EMBED_STOP   = 2,
+    QWS_EMBED_REGION = 4,
+};
+
+/* QWS_CMD_EMBED (29)
+ * rawData = nrects × QRect (x, y, w, h as int32 each) */
+typedef struct {
+    int32_t embedder;   /* window id doing the embedding */
+    int32_t embedded;   /* window id being embedded */
+    int32_t type;       /* qws_embed_type */
+    int32_t nrects;     /* number of QRects in rawData */
+} qws_cmd_embed_t;
+
 typedef enum {
         STARTED_USING_FONT = 0,
         STOPPED_USING_FONT,
@@ -574,6 +675,12 @@ typedef enum {
 typedef struct {
     int32_t type;       /* StartedUsing=0, StoppedUsing=1 */
 } qws_cmd_font_t;
+
+/* QWS_CMD_SCREEN_TRANSFORM (31) */
+typedef struct {
+    int32_t screen;
+    int32_t transformation;
+} qws_cmd_screen_transform_t;
  
 /* -----------------------------------------------------------
  * Generic packet representation
@@ -622,10 +729,7 @@ size_t qws_packet_wire_size(const qws_packet_t *pkt);
 /* -----------------------------------------------------------
  * Stream reader: incrementally parse packets from a byte stream
  * ----------------------------------------------------------- */
-/* -----------------------------------------------------------
- * Stream reader: incrementally parse packets from a byte stream
- * ----------------------------------------------------------- */
- 
+
 typedef enum {
     QWS_READ_HEADER,
     QWS_READ_SIMPLE,
@@ -701,6 +805,9 @@ void qws_shm_destroy(qws_shm_t *shm);
 /* Attach an existing SysV shm segment read-only (does NOT take ownership).
  * Returns 0 on success. */
 int qws_shm_attach_sysv(qws_shm_t *shm, int shm_id);
+
+/* Update SysV shm segment information - e.g. after a memory region resize. */
+int qws_shm_update_sysv(qws_shm_t *shm);
 
 /* Detach a previously attached mapping without deleting the segment. */
 void qws_shm_detach(qws_shm_t *shm);
