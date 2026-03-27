@@ -157,7 +157,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         if (nrects > 0) {
             if (qws_convert_from_utf16(&surface_key, (const uint8_t *)
                     &((char *) incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t)],
-                    cmd->surfacekeylength * 2, QWS_UTF16_LE, NULL) != 0) {
+                    cmd->surfacekeylength, QWS_UTF16_LE, NULL) != 0) {
                 fprintf(stderr, "[qwswayland] Illegal surface key from client %d\n",
                     cl->client_id);
                 free(surface_key);
