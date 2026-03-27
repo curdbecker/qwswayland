@@ -19,6 +19,7 @@ typedef struct {
     qwswl_window_t *win;
     int32_t         gx;
     int32_t         gy;
+    int32_t         button_state;
 } qwswl_pointer_data_t;
 
 

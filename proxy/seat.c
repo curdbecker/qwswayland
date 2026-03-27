@@ -55,7 +55,7 @@ static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
     /* Send QWS mouse event to the owning client */
     qws_packet_t *evt = qws_make_mouse_event(
         win->qws_id, pointer_data->gx, pointer_data->gy,
-        0, 0, time);
+        pointer_data->button_state, 0, time);
 
     qws_trace_packet(cl->client_id, evt, true);
     qws_write_packet(cl->fd, evt);
@@ -137,6 +137,8 @@ static void pointer_button(void *data, struct wl_pointer *ptr,
     //          win->qws_id, qt_state);
 
     // assert(pointer_data->gx >= 0 && pointer_data->gy >= 0);
+
+    pointer_data->button_state = qt_state;
 
     qws_packet_t *evt = qws_make_mouse_event(
         win->qws_id, pointer_data->gx, pointer_data->gy, qt_state, 0, (int32_t)time);
