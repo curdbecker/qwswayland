@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
+
 #include "window.h"
 #include "lifecycle.h"
 #include "client.h"
@@ -53,8 +55,6 @@ static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
 static void xdg_toplevel_close(void *data, struct xdg_toplevel *toplevel)
 {
     (void)toplevel;
-    // qwswl_window_t *win = (qwswl_window_t *)data;
-    // win->visible = false;
 }
 
 static void xdg_toplevel_configure_bounds(void *data,
@@ -89,18 +89,17 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
 
 static void release_server_shm(qwswl_window_t *win)
 {
-    if (win->server_shm.buffer) {
+    if (win->server_shm.buffer)
         wl_buffer_destroy(win->server_shm.buffer);
-        win->server_shm.buffer = NULL;
-    }
-    if (win->server_shm.pixels && win->server_shm.size > 0) {
+
+    if (win->server_shm.pixels && win->server_shm.size > 0)
         munmap(win->server_shm.pixels, win->server_shm.size);
-        win->server_shm.pixels = NULL;
-    }
-    if (win->server_shm.fd >= 0) {
+
+    if (win->server_shm.fd >= 0)
         close(win->server_shm.fd);
-        win->server_shm.fd = -1;
-    }
+    
+    if (win->server_shm.pool)
+        wl_shm_pool_destroy(win->server_shm.pool);
 }
 
 void qwswl_attach_client_shm(qwswl_window_t *win,
@@ -125,16 +124,84 @@ void qwswl_detach_client_shm(qwswl_window_t *win)
     win->client_shm.height = -1;
 }
 
+static int qwswl_resize_buffer(qwswl_state_t *state, qwswl_window_t *win, 
+    int32_t stride, size_t size, int32_t width, int32_t height)
+{
+    assert(win->server_shm.pixels != NULL);
+
+    /* Update our information about the shared memory region. 
+     * the region will likely never get smaller, since I am not sure 
+     * SysV regions can actually be resized. In this case, the QWS client
+     * will rather destroy and recreate it. We will be informed about
+     * this explictely via region events then */
+    if (qws_shm_update_sysv(&win->client_shm.shm) != 0) {
+        return -1;
+    }
+
+    win->client_shm.width = width;
+    win->client_shm.height = height;
+
+    if (win->server_shm.size == size)
+        /* buffer size is the one expected - no need to do anything */
+        return 0;
+
+    void *pixels = win->server_shm.pixels;
+
+    if (win->server_shm.size < size) {
+        /* We need to resize the backing file, our memory mapping
+         * and force Wayland to do a remap on its end. */
+
+        if (ftruncate(win->server_shm.fd, (off_t)size) < 0)
+            return -1;
+
+        pixels = mremap(win->server_shm.pixels, 
+            win->server_shm.size, size, MREMAP_MAYMOVE);
+        if (pixels == MAP_FAILED)
+            return -1;
+
+        wl_shm_pool_resize(win->server_shm.pool, size);
+
+        win->server_shm.size = size;
+    }
+
+    if (win->wl_surface) {
+        /* we need to make sure that the compositor isn't currently
+         * using the buffer, so we need commit and force it to process 
+         * all outstanding events */
+        wl_surface_commit(win->wl_surface);
+        wl_display_roundtrip(state->wl_display);
+    }
+
+    /* We need to update the buffer in any case, since we need to associate 
+     * the window dimensions with the buffer. Otherwise, there might be some
+     * really strange display artifacts about to happen. */
+
+    wl_buffer_destroy(win->server_shm.buffer);
+
+    struct wl_buffer *buffer = wl_shm_pool_create_buffer(
+        win->server_shm.pool, 0, width, height, stride, WL_SHM_FORMAT_ARGB8888);
+
+    win->server_shm.pixels = pixels;
+    win->server_shm.buffer = buffer;
+
+    if (!buffer) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int qwswl_create_or_update_buffer(qwswl_state_t *state, qwswl_window_t *win,
                           int32_t width, int32_t height)
 {
     int32_t stride = width * 4;  /* ARGB32 = 4 bytes/pixel */
     size_t size = (size_t)(stride * height);
 
-    if (win->server_shm.pixels != NULL 
-        && win->server_shm.size >= size)
-        /* buffer exists and is not meant be changed - nothing to do here */
-        return 0;
+    if (win->server_shm.pixels != NULL) {
+        /* need to adjust the mapping of the existing buffer
+         * in order to correctly represent the memory region to wayland */
+        return qwswl_resize_buffer(state, win, stride, size, width, height);
+    }
     
     /* Create anonymous file for wl_shm */
     char template[] = "/tmp/qwswl-shm-XXXXXX";
@@ -163,14 +230,13 @@ static int qwswl_create_or_update_buffer(qwswl_state_t *state, qwswl_window_t *w
 
     struct wl_buffer *buffer = wl_shm_pool_create_buffer(
         pool, 0, width, height, stride, WL_SHM_FORMAT_ARGB8888);
-    wl_shm_pool_destroy(pool);
-
     if (!buffer) {
         munmap(pixels, size);
         close(fd);
         return -1;
     }
 
+    win->server_shm.pool   = pool;
     win->server_shm.buffer = buffer;
     win->server_shm.pixels = pixels;
     win->server_shm.fd     = fd;
@@ -242,23 +308,19 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
     int32_t width = max_x2 - min_x1 + 1;
     int32_t height = max_y2 - min_y1 + 1;
 
-    if (min_x1 == win->geometry.x && min_y1 == win->geometry.y &&
-            width == win->geometry.width && height == win->geometry.height)
-        return;
-
     win->geometry.x = min_x1;
     win->geometry.y = min_y1;
     win->geometry.width = width;
     win->geometry.height = height;
 
-    QWS_TRACE("Updating Window %d geometry", win->qws_id);
-
     if (win->parent)
         position_window_relative_to_parent(win);
 
     /* we need might to need to resize/create the buffer as well */
-    qwswl_create_or_update_buffer(state, win, 
-        win->geometry.width, win->geometry.height);
+    assert(qwswl_create_or_update_buffer(state, win, 
+        win->geometry.width, win->geometry.height) == 0);
+
+    assert(width == win->client_shm.width && height == win->client_shm.height);
 }
 
 static void draw_debug_border(qwswl_window_t *win,
@@ -300,19 +362,22 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
     /* should not try to update surface if the window does not exist */
     assert(win->wl_surface);
 
-    /* buffer sizes must be always equal */
-    assert(win->client_shm.shm.size == win->server_shm.size);
+    /* assume qws shm region size is potentially larger but at least equally sized */
+    // assert(win->client_shm.shm.size >= win->server_shm.size);
 
     for (int i = 0; i < nrects; i++) {
-        int32_t copy_x = c_max(rects[i].x1- win->geometry.x + win->geometry.move_off_x, 0);
-        int32_t copy_y = c_max(rects[i].y1 - win->geometry.y + win->geometry.move_off_y, 0);
-        int32_t copy_w = c_min(rects[i].x2 - (rects[i].x1 + win->geometry.move_off_x) + 1, win->client_shm.width);
-        int32_t copy_h = c_min(rects[i].y2 - (rects[i].y1 + win->geometry.move_off_y) + 1, win->client_shm.height);
-
         // int32_t copy_x = rects[i].x1 - win->geometry.x;
         // int32_t copy_y = rects[i].y1 - win->geometry.y;
-        // int32_t copy_w = rects[i].x2 - rects[i].x1;
-        // int32_t copy_h = rects[i].y2 - rects[i].y1;
+        // int32_t copy_w = rects[i].x2 - rects[i].x1 + 1;
+        // int32_t copy_h = rects[i].y2 - rects[i].y1 + 1;
+        QWS_TRACE("x1=%d x=%d y1=%d y=%d", rects[i].x1, 
+            win->geometry.x, rects[i].y1, win->geometry.y);
+        // int32_t copy_y = rects[i].y1 - win->geometry.y;
+
+        int32_t copy_x = 0;
+        int32_t copy_y = 0;
+        int32_t copy_w = win->client_shm.width;
+        int32_t copy_h = win->client_shm.height;
 
         assert(copy_x >= 0 && copy_y >= 0);
         assert(copy_x <= win->client_shm.width && copy_y <= win->client_shm.height);
@@ -333,10 +398,20 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
                    copy_w * 4);
         }
 
-        if (state->debug_draw_rects)
-            draw_debug_border(win, copy_x, copy_y, copy_w, copy_h, 0xFFFF0000);
+        if (state->debug_draw_rects && 10 +rects[i].y1 <=  win->client_shm.height)
+            draw_debug_border(win, rects[i].x1 - win->geometry.x, rects[i].y1 - win->geometry.y,
+                c_min(10, win->client_shm.width), c_min(10, win->client_shm.height), 
+            0xFFFF0000);
 
         wl_surface_damage(win->wl_surface, copy_x, copy_y, copy_w, copy_h);
+    }
+
+    for (int i = 0; i < nrects; i++) {
+
+        if (state->debug_draw_rects && 10 +rects[i].y1 <=  win->client_shm.height)
+            draw_debug_border(win, rects[i].x1 - win->geometry.x, rects[i].y1 - win->geometry.y,
+                c_min(10, win->client_shm.width), c_min(10, win->client_shm.height), 
+            0xFFFF0000);
     }
 
     if (state->debug_draw_rects)
@@ -344,7 +419,7 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
                           win->geometry.width, win->geometry.height,
                           0xFFFFFF00); /* yellow — full window geometry */
 
-    // wl_surface_damage(win->wl_surface, 0, 0, win->geometry.width, win->geometry.height);
+    wl_surface_damage(win->wl_surface, 0, 0, win->geometry.width, win->geometry.height);
 
     wl_surface_attach(win->wl_surface, win->server_shm.buffer, 0, 0);
 

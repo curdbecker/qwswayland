@@ -269,7 +269,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * the case and it would be also my intuition, so we well treat them
          * as additive until further issues. */
         win->geometry.move_off_x += cmd->dx;
-        win->geometry.move_off_y =+ cmd->dy;
+        win->geometry.move_off_y += cmd->dy;
 
         break;
     }

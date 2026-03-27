@@ -42,6 +42,7 @@ typedef struct qwswl_window {
     /* Wayland-side pixel buffer: anonymous mmap fd + wl_buffer */
     struct {
         struct wl_buffer *buffer;
+        struct wl_shm_pool *pool;
         void             *pixels;       /* mmap of the anonymous fd */
         int               fd;
         size_t            size;
@@ -84,6 +85,7 @@ void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);
 void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id,
                               int32_t width, int32_t height);
 void qwswl_detach_client_shm(qwswl_window_t *win);
+
 
 /* Copy pixels from QWS client's shared memory into the Wayland buffer,
  * and commit the surface. */
