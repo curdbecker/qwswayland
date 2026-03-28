@@ -4,7 +4,7 @@
  */
 
 #include "qws_qdatastream.h"
-#include "qws_server_helpers.h"   /* qws_convert_to_utf16, QWS_UTF16_BE */
+#include "qws_unicode.h"          /* qws_convert_to_utf16, QWS_UTF16_BE */
 
 #include <stdlib.h>
 #include <string.h>

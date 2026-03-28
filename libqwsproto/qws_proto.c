@@ -6,7 +6,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "qws_proto.h"
-#include "qws_server_helpers.h"
+#include "qws_event_factory.h"
 #include "qws_qdatastream.h"
 
 #include <stdlib.h>

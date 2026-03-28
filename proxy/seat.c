@@ -7,7 +7,7 @@
 #include "window.h"
 #include "lifecycle.h"
 #include "client.h"
-#include "qws_server_helpers.h"
+#include "qws_event_factory.h"
 #include "qws_trace.h"
 
 #include <stdlib.h>

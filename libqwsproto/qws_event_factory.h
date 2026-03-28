@@ -1,10 +1,10 @@
 /*
- * qws_server_helpers.h - Helper functions for building QWS server events
+ * qws_event_factory.h - Helper functions for building QWS server events
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef QWS_SERVER_HELPERS_H
-#define QWS_SERVER_HELPERS_H
+#ifndef QWS_EVENT_FACTORY_H
+#define QWS_EVENT_FACTORY_H
 
 #include "qws_proto.h"
 #include <stdio.h>
@@ -53,33 +53,15 @@ qws_packet_t *qws_make_key_event(int32_t window,
 qws_packet_t *qws_make_focus_event(int32_t window, qws_focus_flag_t flag);
 
 /* Build a MaxWindowRect event. */
-qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1, 
+qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1,
     int32_t y1, int32_t x2, int32_t y2);
 
 /* Build a PropertyReply event. */
 qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
                                         const void *data, int32_t len);
 
-/* UTF-16 byte order for conversion functions */
-typedef enum {
-    QWS_UTF16_LE = 0,  /* little-endian, no BOM (default; matches QWS wire format on x86) */
-    QWS_UTF16_BE = 1,  /* big-endian, no BOM (QDataStream default byte order) */
-} qws_utf16_endian_t;
-
-/* Convert UTF-16LE or UTF-16BE to UTF-8.
- * On success: *dst = malloc'd NUL-terminated string (caller frees), returns 0.
- * out_bytes may be NULL. On error: *dst = NULL, returns -1. */
-int qws_convert_from_utf16(char **dst, const uint8_t *src, size_t srclen,
-                                   qws_utf16_endian_t endian, size_t *out_bytes);
-
-/* Convert UTF-8 to UTF-16LE or UTF-16BE.
- * On success: *dst = malloc'd buffer (caller frees), *out_bytes = byte count, returns 0.
- * out_bytes may be NULL. On error: *dst = NULL, returns -1. */
-int qws_convert_to_utf16(uint8_t **dst, const char *src, size_t srclen,
-                                 qws_utf16_endian_t endian, size_t *out_bytes);
-
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* QWS_SERVER_HELPERS_H */
+#endif /* QWS_EVENT_FACTORY_H */

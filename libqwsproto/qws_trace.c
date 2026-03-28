@@ -6,7 +6,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "qws_trace.h"
-#include "qws_server_helpers.h"
+#include "qws_event_factory.h"
+#include "qws_unicode.h"
 #include <stdlib.h>
 #include <alloca.h>
 #include <string.h>
