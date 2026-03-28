@@ -2,6 +2,29 @@
     "version": "2.0.0",
     "tasks": [
         // ---------------------------------------------------------------
+        // weston (VNC)
+        //   Starts a Weston compositor with VNC backend on port 5900.
+        // ---------------------------------------------------------------
+        {
+            "label": "weston (VNC)",
+            "type": "shell",
+            "command": "weston -S /tmp/xdg/wayland-0 -B vnc --disable-transport-layer-security --port=5900 --idle-time=0 --width=1024 --height=768",
+            "options": {
+                "cwd": "/tmp",
+                "env": {
+                    "XDG_RUNTIME_DIR": "/tmp/xdg",
+                    "WAYLAND_DEBUG": "0"
+                }
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated"
+            },
+            "problemMatcher": []
+        },
+
+        // ---------------------------------------------------------------
         // trace: 1. QWS Server
         //   Starts the example app as the QWS server on display 1.
         //   Socket appears at /tmp/qtembedded-0/QtEmbedded-1.

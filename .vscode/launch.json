@@ -39,6 +39,35 @@
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example"
         },
 
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "weston (VNC)",
+            "program": "/usr/bin/weston",
+            "args": [
+                "-S", "/tmp/xdg/wayland-0",
+                "-B", "vnc",
+                "--disable-transport-layer-security",
+                "--port=5900",
+                "--idle-time=0",
+                "--width=1024",
+                "--height=768"
+            ],
+            "cwd": "/tmp",
+            "environment": [
+                { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
+                { "name": "WAYLAND_DEBUG",   "value": "0" }
+            ],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+
         // --- Trace proxy setup (3 configs + compound below) ---
 
         {
