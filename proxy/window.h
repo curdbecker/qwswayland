@@ -55,9 +55,13 @@ typedef struct qwswl_window {
         int32_t   format;               /* QWS pixel format from the client */
     } client_shm;
 
+    /* Per-surface opacity (wp_alpha_modifier, optional — NULL if unsupported) */
+    struct wp_alpha_modifier_surface_v1 *alpha_modifier_surface;
+
     /* Window properties */
     char                 *name;
     char                 *caption;
+    uint8_t              opacity;
     qws_window_flags_t   win_flags;
     bool                 fixed;
     bool                 force_full_repaint;
@@ -77,6 +81,11 @@ void qwswl_hide_window(qwswl_state_t *state, qwswl_window_t *win);
 
 /* Set the xdg_toplevel title from the QWS region name/caption. */
 void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);
+
+/* Apply a QWS opacity value (0–255) to the surface via wp_alpha_modifier.
+ * Creates the alpha_modifier_surface on first call; emits a warning and
+ * returns silently if the compositor does not support the protocol. */
+void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win, uint8_t opacity);
 
 /* Attach, reattach or detach the QWS client's SysV shm as a permanently-mapped
  * read-only buffer on the window. Detaches any previously attached mapping

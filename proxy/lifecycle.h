@@ -17,6 +17,7 @@
 
 #include "xdg-shell-client-protocol.h"
 #include "xdg-output-unstable-v1-client-protocol.h"
+#include "alpha-modifier-v1-client-protocol.h"
 
 #include "stc/types.h"
 
@@ -65,6 +66,9 @@ typedef struct qwswl_state {
 
     /* wl_subcompositor for child/subsurface windows */
     struct wl_subcompositor *wl_subcompositor;
+
+    /* wp_alpha_modifier for per-surface opacity (optional, may be NULL) */
+    struct wp_alpha_modifier_v1 *wp_alpha_modifier;
 
     struct xkb_context  *xkb_context;
 

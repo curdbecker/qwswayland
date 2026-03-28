@@ -119,9 +119,11 @@ static void registry_global(void *data, struct wl_registry *reg,
                                                  &wl_compositor_interface, version);
         QWS_TRACE("registry: found wl_compositor (name=%u, max_version=%u)", name, version);
     } else if (strcmp(interface, "wl_shm") == 0) {
+        int selected_version = 1;
         state->wl_shm = wl_registry_bind(reg, name,
-                                           &wl_shm_interface, 1);
-        QWS_TRACE("registry: found wl_shm (name=%u, max_version=%u)", name, version);
+                                           &wl_shm_interface, selected_version);
+        QWS_TRACE("registry: found wl_shm (name=%u, max_version=%u, selected=%d)", name, version,
+            selected_version);
     } else if (strcmp(interface, "wl_seat") == 0) {
         state->wl_seat = wl_registry_bind(reg, name,
                                             &wl_seat_interface, version);
@@ -141,6 +143,10 @@ static void registry_global(void *data, struct wl_registry *reg,
         state->wl_subcompositor = wl_registry_bind(reg, name,
                                                     &wl_subcompositor_interface, version);
         QWS_TRACE("registry: found wl_subcompositor (name=%u, max_version=%u)", name, version);
+    } else if (strcmp(interface, "wp_alpha_modifier_v1") == 0) {
+        state->wp_alpha_modifier = wl_registry_bind(reg, name,
+                                                     &wp_alpha_modifier_v1_interface, version);
+        QWS_TRACE("registry: found wp_alpha_modifier_v1 (name=%u, max_version=%u)", name, version);
     } else {
         QWS_TRACE("registry: skipped %s (name=%u, v=%u)", interface, name, version);
     }

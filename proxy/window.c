@@ -513,6 +513,8 @@ qwswl_window_t *qwswl_allocate_window(qwswl_client_t *client)
     win->qws_id = qws_id;
     win->win_flags = -1;
     win->fixed = false;
+    // window is opaque by default
+    win->opacity = 255;
 
     qwswl_add_window_to_client(client, qws_id, win);
 
@@ -576,6 +578,9 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
 
     release_server_shm(win);
 
+    if (win->alpha_modifier_surface)
+        wp_alpha_modifier_surface_v1_destroy(win->alpha_modifier_surface);
+
     if (win->xdg_toplevel)
         xdg_toplevel_destroy(win->xdg_toplevel);
 
@@ -630,6 +635,38 @@ void qwswl_hide_window(qwswl_state_t *state, qwswl_window_t *win)
         wl_surface_commit(win->wl_surface);
         wl_display_flush(state->wl_display);
     }
+}
+
+void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win, uint8_t opacity)
+{
+    /* prevent unnecessary operations that might even lead to irrelevant warnings */
+    if (win->opacity == opacity)
+        return;
+
+    if (!state->wp_alpha_modifier) {
+        fprintf(stderr, "[qwswayland] warning: wp_alpha_modifier_v1 not supported"
+                        " by compositor, ignoring opacity for window %d\n",
+                win->qws_id);
+        return;
+    }
+
+    if (!win->alpha_modifier_surface) {
+        win->alpha_modifier_surface = wp_alpha_modifier_v1_get_surface(
+            state->wp_alpha_modifier, win->wl_surface);
+        if (!win->alpha_modifier_surface) {
+            fprintf(stderr, "[qwswayland] warning: failed to create"
+                            " alpha_modifier_surface for window %d\n",
+                    win->qws_id);
+            return;
+        }
+    }
+
+    win->opacity = opacity;
+
+    /* Scale 0-255 proportionally to 0-UINT32_MAX */
+    uint32_t factor = (uint32_t)(((uint64_t)opacity * UINT32_MAX) / 255);
+    wp_alpha_modifier_surface_v1_set_multiplier(win->alpha_modifier_surface, factor);
+    wl_surface_commit(win->wl_surface);
 }
 
 void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption)

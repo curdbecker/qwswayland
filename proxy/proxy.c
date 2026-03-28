@@ -292,6 +292,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         }
 
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
+        /* This might be not exactly what we want, since this will 
+         * affect the entire surface and not just the ones that
+         * have been specified by the client... Who knows? */
+        qwswl_set_opacity(state, win, cmd->opaque ? 255 : 0);
         
         break;
     }
@@ -368,6 +372,18 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     }
 
     case QWS_CMD_REQUEST_FOCUS: {
+        /* 
+         * There is not that much that we can do for the client here, since the 
+         * compositor controls basically all user-related input in an (sometimes 
+         * well-meaning, but a bit misguided IMHO) effort to protect the user
+         * from weird or intrusive behaviour by applications. 
+         * 
+         * For now we assume that a command without a related focus event will
+         * be considered by the client as a decline of the request.
+         * In doubt, we might need to force focus events for the currently
+         * focused seat device again to make sure that there is the same shared
+         * understanding?
+         */
         break;
     }
 
@@ -377,8 +393,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
-        /* Wayland doesn't have per-surface opacity natively.
-         * Could use wp_alpha_modifier or compositor-specific protocol. */
+        qwswl_set_opacity(state, win, cmd->opacity);
         break;
     }
 

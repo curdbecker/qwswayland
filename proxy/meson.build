@@ -17,6 +17,10 @@ xdg_output_src = wayland_mod.scan_xml(
   wp_dir / 'unstable/xdg-output/xdg-output-unstable-v1.xml',
   client: true, server: false)
 
+alpha_modifier_src = wayland_mod.scan_xml(
+  wp_dir / 'staging/alpha-modifier/alpha-modifier-v1.xml',
+  client: true, server: false)
+
 proxy_sources = files(
   'main.c',
   'client.c',
@@ -31,6 +35,7 @@ executable('qwswayland',
   proxy_sources,
   xdg_shell_src,
   xdg_output_src,
+  alpha_modifier_src,
   dependencies: [
     qwsproto_dep,
     wayland_client,
