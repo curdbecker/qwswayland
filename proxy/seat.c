@@ -17,6 +17,7 @@
 
 #include <time.h>
 #include <sys/mman.h>
+#include <linux/input-event-codes.h>
 
 #include <assert.h>
 
@@ -117,17 +118,12 @@ static void pointer_button(void *data, struct wl_pointer *ptr,
 
     assert(pointer_data && win);
 
-    /*
-     * Map Linux button codes to Qt::MouseButton flags:
-     *   BTN_LEFT   (0x110) → Qt::LeftButton   (0x01)
-     *   BTN_RIGHT  (0x111) → Qt::RightButton  (0x02)
-     *   BTN_MIDDLE (0x112) → Qt::MiddleButton  (0x04)
-     */
+    /* Map Linux evdev button codes to Qt::MouseButton flags. */
     switch (button) {
-    case 0x110: qt_button = 0x01; break;  /* Left */
-    case 0x111: qt_button = 0x02; break;  /* Right */
-    case 0x112: qt_button = 0x04; break;  /* Middle */
-    default:    qt_button = 0;    break;
+    case BTN_LEFT:   qt_button = QWS_BTN_LEFT;   break;
+    case BTN_RIGHT:  qt_button = QWS_BTN_RIGHT;  break;
+    case BTN_MIDDLE: qt_button = QWS_BTN_MIDDLE; break;
+    default:         qt_button = 0;              break;
     }
 
     int32_t qt_state = btn_state ? qt_button : 0;

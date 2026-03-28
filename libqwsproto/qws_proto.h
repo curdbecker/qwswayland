@@ -280,6 +280,13 @@ enum qws_keyboard_modifier {
     QWS_MOD_MASK         = 0xfe000000,
 };
 
+/* Qt::MouseButton flags — matches Qt 4.8 qnamespace.h */
+enum qws_mouse_button {
+    QWS_BTN_LEFT   = 0x01,
+    QWS_BTN_RIGHT  = 0x02,
+    QWS_BTN_MIDDLE = 0x04,
+};
+
 /* Bit flags packed into qws_evt_key_t::flags */
 enum qws_key_flag {
     QWS_KEY_FLAG_PRESS       = 0x1,  /* is_press:1 */
