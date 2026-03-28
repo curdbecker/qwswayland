@@ -59,6 +59,21 @@ void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *cl)
     }
 }
 
+static void create_windows(qwswl_client_t *cl, int32_t count)
+{
+    int32_t first_id = cl->next_window_id + 1;
+    for (int32_t i = 0; i < count; i++)
+    {
+        /* Create a window */
+        assert(qwswl_allocate_window(cl));
+    }
+
+    qws_packet_t *evt = qws_make_creation_event(first_id, count);
+    qws_trace_packet(cl->client_id, evt, true);
+    qws_write_packet(cl->fd, evt);
+}
+
+
 void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
                              qws_packet_t *incoming_pkt)
 {
@@ -103,13 +118,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         * The client blocks in waitForCreation() after connecting and
         * will not proceed until it receives a Creation event. The server
         * must proactively provide IDs — the client does not send a
-        * Create command first. Therefore, the first window is allocated
-        * by default. */
-        qwswl_window_t *window = qwswl_allocate_window(cl);
-    
-        qws_packet_t *cre = qws_make_creation_event(window->qws_id, 1);
-        qws_trace_packet(cl->client_id, cre, true);
-        qws_write_packet(cl->fd, cre);
+        * Create command first. In general, there seem to be 30 resources
+        * to be created by default - no idea why. */
+        create_windows(cl, 30);
 
         break;
     }
@@ -122,16 +133,8 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * windows, properties, etc. We don't create visible windows here. */
         qws_cmd_create_t *cmd = (qws_cmd_create_t *)incoming_pkt->simple_data;
         assert(cmd->count >= 0);
- 
-        int32_t first_id = cl->next_window_id + 1;
-        for (int32_t i = 0; i < cmd->count; i++) {
-            /* Create a window */
-            assert(qwswl_allocate_window(cl));
-        }
- 
-        qws_packet_t *evt = qws_make_creation_event(first_id, cmd->count);
-        qws_trace_packet(cl->client_id, evt, true);
-        qws_write_packet(cl->fd, evt);
+
+        create_windows(cl, cmd->count);
         break;
     }
 

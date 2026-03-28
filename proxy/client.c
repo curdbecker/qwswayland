@@ -37,6 +37,7 @@ qwswl_client_t *qwswl_create_client(int fd, int32_t id)
     cl->fd = fd;
     cl->client_id = id;
     cl->focused_window_id = -1;
+    cl->next_window_id = cl->client_id * 1000;
     qws_reader_init(&cl->reader, true);
     qwswl_window_map_t_init();
 
