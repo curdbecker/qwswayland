@@ -20,6 +20,7 @@ typedef struct {
     int32_t         gx;
     int32_t         gy;
     int32_t         button_state;
+    uint32_t         serial;
 } qwswl_pointer_data_t;
 
 

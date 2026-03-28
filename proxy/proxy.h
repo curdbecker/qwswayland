@@ -19,7 +19,7 @@ void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *client);
 
 /* Dispatch a single decoded QWS command packet to the appropriate handler. */
 void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *client,
-                             qws_packet_t *pkt);
+                            qws_packet_t *pkt);
 
 #ifdef __cplusplus
 }

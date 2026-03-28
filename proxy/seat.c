@@ -24,6 +24,11 @@
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
+#include "stc/common.h"
+#include "stc/sys/utility.h"
+
+extern qwswl_state_t g_state;
+
 /* ================================================================
  * Wayland pointer listener → QWS mouse events
  * ================================================================ */
@@ -36,18 +41,23 @@ static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
 
     qwswl_client_t *cl = win->client;
 
-    /* Translate surface-local coords to QWS global coords */
-    pointer_data->gx = win->geometry.x + wl_fixed_to_int(sx)
-        + win->geometry.move_off_x;
-    pointer_data->gy = win->geometry.y + wl_fixed_to_int(sy)
-        + win->geometry.move_off_y;
+    /* Translate surface-local coords to QWS global coords, but 
+     * clamp them to the maximum possible screen coordinates. 
+     * This should prevent the QWS client to attempt moving 
+     * elements out of the window surface. */
+    pointer_data->gx = 
+        c_min(c_max(win->geometry.x + wl_fixed_to_int(sx), 0), 
+            g_state.screen_width);
+    pointer_data->gy = 
+        c_min(c_max(win->geometry.y + wl_fixed_to_int(sy), 0),
+            g_state.screen_height);
 
-    // QWS_TRACE("qws_win=%d, surface_local=(%d,%d), global=(%d,%d)",
-    //          win->qws_id,
-    //          wl_fixed_to_int(sx), wl_fixed_to_int(sy),
-    //          pointer_data->gx, pointer_data->gy);
-
-    assert(pointer_data->gx >= 0 && pointer_data->gy >= 0);
+#ifdef QWSWL_DEBUG_POINTER_MOVEMENT
+    QWS_TRACE("qws_win=%d, surface_local=(%d,%d), global=(%d,%d)",
+             win->qws_id,
+             wl_fixed_to_int(sx), wl_fixed_to_int(sy),
+             pointer_data->gx, pointer_data->gy);
+#endif
 
     struct timespec _ts;
     clock_gettime(CLOCK_MONOTONIC, &_ts);
@@ -70,8 +80,10 @@ static void pointer_enter(void *data, struct wl_pointer *ptr,
     qwswl_window_t *win = qwswl_surface_to_win(surface);
     assert(win);
 
+    /* zero-initialize to not have random (or stale during reallocation)
+     * leak into the new pointer context and produce very weird results */
     qwswl_pointer_data_t *pointer_data =
-        malloc(sizeof(qwswl_pointer_data_t));
+        calloc(1, sizeof(qwswl_pointer_data_t));
     assert(pointer_data);
 
     pointer_data->win = win;
@@ -79,9 +91,11 @@ static void pointer_enter(void *data, struct wl_pointer *ptr,
 
     update_pointer_position(pointer_data, sx, sy);
 
+#ifdef QWSWL_DEBUG_POINTER
     QWS_TRACE("surface=%p -> qws_win=%d, pos=(%d,%d)",
              (void *)surface, win->qws_id,
               wl_fixed_to_int(sx), wl_fixed_to_int(sy));
+#endif
 }
 
 static void pointer_leave(void *data, struct wl_pointer *ptr,
@@ -91,10 +105,12 @@ static void pointer_leave(void *data, struct wl_pointer *ptr,
     free(pointer_data);
     wl_pointer_set_user_data(ptr, NULL);
 
+#ifdef QWSWL_DEBUG_POINTER
     qwswl_window_t *win = qwswl_surface_to_win(surface);
     assert(win);
 
     QWS_TRACE("win %d", win->qws_id);
+#endif
 }
 
 static void pointer_motion(void *data, struct wl_pointer *ptr,
@@ -102,6 +118,26 @@ static void pointer_motion(void *data, struct wl_pointer *ptr,
 {
     qwswl_pointer_data_t *pointer_data =
         (qwswl_pointer_data_t *) wl_pointer_get_user_data(ptr);
+    assert(pointer_data);
+    qwswl_window_t *win = pointer_data->win;
+    assert(win);
+
+    int32_t gy = wl_fixed_to_int(sy);
+
+    if (gy <= 35 && pointer_data->button_state == QWS_BTN_LEFT 
+            && win->xdg_toplevel) {
+        /* the pointer data exists, mouse button is pressed, this is a 
+         * top-level window and we're inside the region that is normally
+         * associated with the window decoration, then this is likely
+         * an attempt to move the window. */
+        xdg_toplevel_move(win->xdg_toplevel, g_state.wl_seat,
+            pointer_data->serial);
+
+        /* Hide the event from the QWS client. We do not want it to realize
+         * that a move operation is about to happen and start one on its
+         * own. */
+        return;
+    }
 
     update_pointer_position(pointer_data, sx, sy);
 }
@@ -128,13 +164,14 @@ static void pointer_button(void *data, struct wl_pointer *ptr,
 
     int32_t qt_state = btn_state ? qt_button : 0;
 
-    // QWS_TRACE("btn=0x%x %s -> qws_win=%d qt_state=0x%x",
-    //          button, btn_state ? "press" : "release",
-    //          win->qws_id, qt_state);
-
-    // assert(pointer_data->gx >= 0 && pointer_data->gy >= 0);
+#ifdef QWSWL_DEBUG_POINTER
+    QWS_TRACE("btn=0x%x %s -> qws_win=%d qt_state=0x%x",
+             button, btn_state ? "press" : "release",
+             win->qws_id, qt_state);
+#endif
 
     pointer_data->button_state = qt_state;
+    pointer_data->serial = serial;
 
     qws_packet_t *evt = qws_make_mouse_event(
         win->qws_id, pointer_data->gx, pointer_data->gy, qt_state, 0, (int32_t)time);
@@ -164,8 +201,10 @@ static void pointer_axis(void *data, struct wl_pointer *ptr,
      * Scale: ~10 Wayland units per notch, 120 Qt units per notch. */
     int32_t delta = -(int32_t)(wl_fixed_to_double(value) * 12.0);
 
-    // QWS_TRACE("axis=vertical value=%.2f delta=%d -> qws_win=%d",
-    //           wl_fixed_to_double(value), delta, win->qws_id);
+#ifdef QWSWL_DEBUG_POINTER_MOVEMENT
+    QWS_TRACE("axis=vertical value=%.2f delta=%d -> qws_win=%d",
+              wl_fixed_to_double(value), delta, win->qws_id);
+#endif
 
     qws_packet_t *evt = qws_make_mouse_event(
         win->qws_id, pointer_data->gx, pointer_data->gy,

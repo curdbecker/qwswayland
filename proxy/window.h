@@ -53,8 +53,6 @@ typedef struct qwswl_window {
     struct {
         qws_shm_t shm;                  /* shm_id, base (pixels) */
         int32_t   format;               /* QWS pixel format from the client */
-        int32_t   width;                /* buffer dimensions as reported by the client */
-        int32_t   height;
     } client_shm;
 
     /* Window properties */
@@ -62,6 +60,7 @@ typedef struct qwswl_window {
     char                 *caption;
     qws_window_flags_t   win_flags;
     bool                 fixed;
+    bool                 force_full_repaint;
 } qwswl_window_t;
 
 /* Allocate data strctures to collect information about a QWS window.*/
@@ -94,7 +93,14 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
 
 /* Update a window's geometry if necessary. */
 void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
-                                const qws_rect_t *rects, int32_t nrects);
+                                qws_rect_t *rects, int32_t nrects);
+
+/* Translate a window by (dx, dy) including the window's stored 
+ * rects. Returns false if the window cannot be moved as requested
+ * e.g. if it has no valid region yet. The window state will then 
+ * be not modified. */
+bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win,
+                       int32_t dx, int32_t dy);
 
 /* -----------------------------------------------------------
  * Hash-table + lookup helpers

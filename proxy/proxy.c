@@ -73,6 +73,42 @@ static void create_windows(qwswl_client_t *cl, int32_t count)
     qws_write_packet(cl->fd, evt);
 }
 
+/*
+ * This is a rather convienent hack to force the QWS client to request
+ * a window repaint from us.
+ *
+ * Like for a region command, a region event without rects is 
+ * interpreted as the surface currently not being visible anymore, e.g.
+ * due to being obscured by another window.
+ *
+ * If we then immediately follow this by a region event with the
+ * expected rects of a window, the client then assumes that the server
+ * might does not have an up-to-date surface content of the window 
+ * anymore and therefore requests an explicit repaint of the window 
+ * immediately.
+ */
+__attribute__((unused))
+static void force_window_repaint(qwswl_window_t *win)
+{
+    assert(win);
+    qwswl_client_t *cl = win->client;
+    {
+        qws_packet_t *evt = qws_make_region_event(
+            win->qws_id, 0, NULL, 0);
+        qws_trace_packet(cl->client_id, evt, true);
+        qws_write_packet(cl->fd, evt);
+        qws_packet_free(evt);
+    }
+    {
+        qws_packet_t *evt 
+            = qws_make_region_event(win->qws_id, 0, 
+                win->geometry.rects, win->geometry.nrects);
+        qws_trace_packet(cl->client_id, evt, true);
+        qws_write_packet(cl->fd, evt);
+        qws_packet_free(evt);
+    }
+    qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
+};
 
 void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
                              qws_packet_t *incoming_pkt)
@@ -155,7 +191,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_rect_t *rects = (qws_rect_t *)incoming_pkt->raw_data;
         char * surface_key;
         uint8_t *surface_data = 
-            &((uint8_t *) incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t) + cmd->surfacekeylength * 2];
+            &((uint8_t *) incoming_pkt->raw_data)[
+                cmd->nrectangles * sizeof(qws_rect_t) + cmd->surfacekeylength * 2
+            ];
 
         if (nrects > 0) {
             if (qws_convert_from_utf16(&surface_key, (const uint8_t *)
@@ -254,7 +292,6 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         }
 
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
-        qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
         
         break;
     }
@@ -262,17 +299,22 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     case QWS_CMD_REGION_MOVE: {
         qws_cmd_region_move_t *cmd =
             (qws_cmd_region_move_t *)incoming_pkt->simple_data;
-        (void) cmd;
 
         qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
 
-        /* Unfortunately it is not really clear whether the offset is additive
-         * or not... Based on source code references found by Claude, this is likely
-         * the case and it would be also my intuition, so we well treat them
-         * as additive until further issues. */
-        win->geometry.move_off_x += cmd->dx;
-        win->geometry.move_off_y += cmd->dy;
+        /* Only ack the move with a region event if the move actually is valid
+         * on the region in the current state. */
+        if (qwswl_move_window(state, win, cmd->dx, cmd->dy)) {
+            /* Send region ack with the translated (clipped) rects */
+            qws_packet_t *evt = qws_make_region_event(
+                cmd->window, 0, win->geometry.rects, win->geometry.nrects);
+            qws_trace_packet(cl->client_id, evt, true);
+            qws_write_packet(cl->fd, evt);
+            qws_packet_free(evt);
+
+            qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
+        }
 
         break;
     }
@@ -322,25 +364,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
                 break;
         }
 
-        const qws_rect_t window_rect =
-            { win->geometry.x, win->geometry.y, win->geometry.width, win->geometry.height };
-        if (win->wl_surface)
-            qwswl_update_surface(state, win, &window_rect, 1);
-
         break;
     }
 
     case QWS_CMD_REQUEST_FOCUS: {
-        // qws_cmd_request_focus_t *cmd =
-        //     (qws_cmd_request_focus_t *)incoming_pkt->simple_data;
-
-        // qws_packet_t *evt = qws_make_focus_event(cmd->window, cmd->flag);
-        // assert(evt);
-
-        // qws_trace_packet(cl->client_id, evt, true);
-        // qws_write_packet(cl->fd, evt);
-        // qws_packet_free(evt);
-
         break;
     }
 

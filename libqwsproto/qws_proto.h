@@ -235,12 +235,12 @@ typedef struct {
 } qws_rect_t;
  
 typedef struct {
-    int32_t x;
-    int32_t y;
-    int32_t move_off_x;
-    int32_t move_off_y;
-    int32_t width;
-    int32_t height;
+    int32_t     x;
+    int32_t     y;
+    int32_t     width;
+    int32_t     height;
+    qws_rect_t *rects;   /* heap-alloc'd clipped rects; NULL = no valid region */
+    int32_t     nrects;
 } qwswl_geometry_t;
 
 /* -----------------------------------------------------------

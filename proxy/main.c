@@ -15,7 +15,7 @@
 #include <getopt.h>
 #include <unistd.h>
 
-static qwswl_state_t g_state;
+qwswl_state_t g_state;
 
 static void signal_handler(int sig)
 {
