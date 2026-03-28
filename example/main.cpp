@@ -50,6 +50,7 @@
 #include <QDebug>
 
 #include "mainwindow.h"
+#include "debug.h"
 
 /// Gives human-readable event type information.
 QDebug operator<<(QDebug str, const QEvent * ev) {
@@ -147,6 +148,7 @@ int main(int argc, char *argv[])
     app.setOrganizationName("Trolltech");
     app.setApplicationName("Application Example");
     new DebugCursorFilter(qApp);
+    qtdebug_init();
 
     MainWindow *mainWin = nullptr;
     if (QApplication::type() != QApplication::GuiServer) {

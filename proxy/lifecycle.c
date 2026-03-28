@@ -6,6 +6,7 @@
 
 #include "lifecycle.h"
 #include "client.h"
+#include "debug.h"
 #include "proxy.h"
 #include "seat.h"
 #include "qws_trace.h"
@@ -293,6 +294,7 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
     }
 
     fprintf(stderr, "[qwswayland] Initialized: %dbpp\n", depth);
+    qwswl_debug_init(state);
     return 0;
 }
 

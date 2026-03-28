@@ -11,6 +11,6 @@ preprocessed = qt4_mod.preprocess(
 )
 
 executable('example',
-  sources: ['main.cpp', 'mainwindow.cpp'] + preprocessed,
+  sources: ['main.cpp', 'mainwindow.cpp', 'debug.cpp'] + preprocessed,
   dependencies: qt4_dep,
 )
