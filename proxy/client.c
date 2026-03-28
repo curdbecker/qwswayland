@@ -174,10 +174,11 @@ void qwswl_stack_dump(const qwswl_client_t *client)
     int i = 0;
     for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
         const qwswl_window_t *win = *it.ref;
-        QWS_TRACE("  [%d] qws_id=%-4d flags=0x%08x%s",
-                  i++, win->qws_id, (unsigned)win->win_flags,
-                  win->win_flags != -1 && QWS_IS_TOPLEVEL_TYPE(win->win_flags)
-                      ? " (toplevel)" : "");
+        if (win->win_flags != -1)
+            QWS_TRACE("  [%d] qws_id=%-4d flags=0x%08x%s",
+                      i++, win->qws_id, (unsigned)win->win_flags,
+                      win->win_flags != -1 && QWS_IS_TOPLEVEL_TYPE(win->win_flags)
+                          ? " (toplevel)" : "");
     }
 }
 
