@@ -34,11 +34,9 @@ static void drop_connection(qwstrace_state_t *st)
 }
 
 /* Feed `len` bytes from `buf` into `reader`, tracing every complete packet.
- * `outgoing`: true for commands (client→server), false for events (server→client).
- * `pcap_writer`: if non-NULL, each parsed packet is written as a capture frame. */
+ * `outgoing`: true for commands (client→server), false for events (server→client). */
 static void feed_and_trace(qws_reader_t *reader, const void *buf, size_t len,
-                            int client_id, bool outgoing,
-                            qws_pcap_writer_t *pcap_writer)
+                            int client_id, bool outgoing)
 {
     size_t offset = 0;
     while (offset < len) {
@@ -50,10 +48,6 @@ static void feed_and_trace(qws_reader_t *reader, const void *buf, size_t len,
         offset += consumed;
         if (pkt) {
             qws_trace_packet(client_id, pkt, outgoing);
-            if (pcap_writer)
-                qws_pcap_writer_write(pcap_writer,
-                                      outgoing ? 1 : 0,
-                                      (uint8_t)client_id, pkt);
             qws_packet_free(pkt);
         }
     }
@@ -217,7 +211,7 @@ int qwstrace_run(qwstrace_state_t *st)
                 if (st->server_fd >= 0)
                     write_all(st->server_fd, buf, (size_t)recv);
                 feed_and_trace(&st->cmd_reader, buf, (size_t)recv,
-                               st->client_id, false, st->pcap_writer);
+                               st->client_id, false);
                 continue;
             }
 
@@ -240,7 +234,7 @@ int qwstrace_run(qwstrace_state_t *st)
                 if (st->client_fd >= 0)
                     write_all(st->client_fd, buf, (size_t)recv);
                 feed_and_trace(&st->evt_reader, buf, (size_t)recv,
-                               st->client_id, true, st->pcap_writer);
+                               st->client_id, true);
                 continue;
             }
         }

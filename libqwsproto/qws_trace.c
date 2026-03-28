@@ -19,10 +19,11 @@
  * Global state
  * ================================================================ */
 
-static int       g_trace_level    = QWS_TRACE_OFF;
-static FILE     *g_trace_output   = NULL;
-static uint64_t  g_exclude_cmd_mask = 0;
-static uint64_t  g_exclude_evt_mask = 0;
+static int                g_trace_level       = QWS_TRACE_OFF;
+static FILE              *g_trace_output      = NULL;
+static uint64_t           g_exclude_cmd_mask  = 0;
+static uint64_t           g_exclude_evt_mask  = 0;
+static qws_pcap_writer_t *g_pcap_writer       = NULL;
 
 static FILE *trace_fp(void)
 {
@@ -48,6 +49,11 @@ void qws_trace_set_exclude_mask(uint64_t cmd_mask, uint64_t evt_mask)
 {
     g_exclude_cmd_mask = cmd_mask;
     g_exclude_evt_mask = evt_mask;
+}
+
+void qws_trace_set_pcap_writer(qws_pcap_writer_t *w)
+{
+    g_pcap_writer = w;
 }
 
 void qws_trace_get_exclude_mask(uint64_t *cmd_mask, uint64_t *evt_mask)
@@ -811,7 +817,15 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
 
 void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt, bool outgoing)
 {
-    if (g_trace_level <= QWS_TRACE_OFF || !pkt)
+    if (!pkt)
+        return;
+
+    /* PCAP capture: independent of trace level and exclusion masks */
+    if (g_pcap_writer)
+        qws_pcap_writer_write(g_pcap_writer, outgoing ? 1 : 0,
+                              (uint8_t)client_id, pkt);
+
+    if (g_trace_level <= QWS_TRACE_OFF)
         return;
 
     FILE *fp = trace_fp();

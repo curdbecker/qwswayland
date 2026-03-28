@@ -12,6 +12,7 @@
 #define QWS_TRACE_H
 
 #include "qws_proto.h"
+#include "qws_pcap.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -44,6 +45,11 @@ enum qws_trace_level {
 
 /* Set the trace level. Default is QWS_TRACE_OFF. */
 void qws_trace_set_level(int level);
+
+/* Attach a PCAP writer.  Every subsequent qws_trace_packet() call writes one
+ * frame to the file regardless of the trace level or exclusion masks.
+ * Pass NULL to detach.  Lifecycle (open/close) remains with the caller. */
+void qws_trace_set_pcap_writer(qws_pcap_writer_t *w);
 
 /* Get the current trace level. */
 int  qws_trace_get_level(void);

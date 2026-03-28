@@ -40,7 +40,7 @@ static void usage(const char *prog)
         "                        -v    one-line per packet (type + sizes)\n"
         "                        -vv   decode struct fields\n"
         "                        -vvv  full hex dump of all payloads\n"
-        "  -w, --write FILE    Write captured packets to a pcapng file.\n"
+        "  -P, --pcap  FILE    Write captured packets to a pcapng file.\n"
         "                        Each frame is one QWS message (DLT_USER0).\n"
         "                        Open with Wireshark + wireshark/qws_dissector.lua.\n"
         "  -x, --exclude LIST  Comma-separated packet type names to suppress.\n"
@@ -81,19 +81,19 @@ int main(int argc, char *argv[])
         { "listen",      required_argument, 0, 'l' },
         { "upstream",    required_argument, 0, 'u' },
         { "verbose",     no_argument,       0, 'v' },
-        { "write",       required_argument, 0, 'w' },
+        { "pcap",        required_argument, 0, 'P' },
         { "exclude",     required_argument, 0, 'x' },
         { "help",        no_argument,       0, 'H' },
         { 0, 0, 0, 0 }
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "l:u:vw:x:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "l:u:vP:x:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'l': listen_display = atoi(optarg); break;
         case 'u': upstream_display = atoi(optarg); break;
         case 'v': verbose++; break;
-        case 'w': pcap_path = optarg; break;
+        case 'P': pcap_path = optarg; break;
         case 'x': qws_trace_parse_exclude_list(optarg, &exclude_cmd_mask, &exclude_evt_mask); break;
         case 'H':
         default:
@@ -127,6 +127,7 @@ int main(int argc, char *argv[])
             return 1;
         }
         fprintf(stderr, "qws_trace_proxy: writing capture to %s\n", pcap_path);
+        qws_trace_set_pcap_writer(g_state.pcap_writer);
     }
 
     int ret = qwstrace_run(&g_state);
