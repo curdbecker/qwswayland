@@ -9,6 +9,7 @@ qwsproto_sources = files(
   'qws_pcap.c',
   'qws_proto.c',
   'qws_qdatastream.c',
+  'qws_rect.c',
   'qws_server_helpers.c',
   'qws_trace.c',
 )
@@ -32,6 +33,6 @@ qwsproto_dep = declare_dependency(
 )
 
 install_headers(
-  'qws_lock.h', 'qws_pcap.h', 'qws_proto.h', 'qws_qdatastream.h', 'qws_server_helpers.h', 'qws_trace.h',
+  'qws_lock.h', 'qws_pcap.h', 'qws_proto.h', 'qws_qdatastream.h', 'qws_rect.h', 'qws_server_helpers.h', 'qws_trace.h',
   subdir: 'qwsproto',
 )
