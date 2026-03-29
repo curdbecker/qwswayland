@@ -71,6 +71,30 @@ static int write_all(int fd, const void *buf, size_t len)
 
 /* ------------------------------------------------------------------ */
 
+static void wait_until_server_ready(qwstrace_state_t *st) {
+    struct epoll_event events[1];
+    int sfd;
+    
+    while (( sfd = qws_client_connect(st->upstream_paths.socket)) < 0) {
+        fprintf(stderr, "qwstrace: upstream %s not yet available: %s\n",
+            st->upstream_paths.socket, strerror(errno));
+
+        /* we sleep here and can wait to be interrupted at the same time */
+        if (epoll_wait(st->epoll_fd, events, 1, 200) < 0) {
+            if (errno == EINTR)
+                continue;
+            /* epoll_fd was closed by signal handler */
+            exit(1);
+        }
+    }
+
+    fprintf(stderr, "qwstrace: upstream %s is now available\n", 
+        st->upstream_paths.socket);
+
+    /* server ready - let's wait for a client */
+    close(sfd);
+}
+
 int qwstrace_init(qwstrace_state_t *st, int listen_display, int upstream_display)
 {
     memset(st, 0, sizeof(*st));
@@ -104,6 +128,10 @@ int qwstrace_init(qwstrace_state_t *st, int listen_display, int upstream_display
         perror("epoll_create1");
         return -1;
     }
+
+    /* monitors epoll to detect if we shall be terminated via STRG-C etc.
+     * and then will immediately exit since there is nothing else really to do */
+    wait_until_server_ready(st);
 
     st->listen_fd = qws_server_listen(st->listen_paths.socket);
     if (st->listen_fd < 0) {
@@ -144,7 +172,7 @@ int qwstrace_run(qwstrace_state_t *st)
         if (n < 0) {
             if (errno == EINTR)
                 continue;
-            /* listen_fd was closed by signal handler */
+            /* epoll_fd was closed by signal handler */
             break;
         }
 

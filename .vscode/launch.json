@@ -22,7 +22,12 @@
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 }
-            ]
+            ],
+            "presentation": {
+                "hidden": false,
+                "group": "qwswayland + example-client",
+                "order": 1
+            }
         },
         {
             "type": "cppdbg",
@@ -32,11 +37,17 @@
                 {
                     "name": "LD_LIBRARY_PATH",
                     "value": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib"
-                }
+                },
             ],
+            "args": ["-display", ":3"],
             "preLaunchTask": "Meson: Build all targets",
             "cwd": "/tmp",
-            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example"
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example",
+            "presentation": {
+                "hidden": false,
+                "group": "qwswayland + example-client",
+                "order": 2
+            }
         },
 
         {
@@ -91,7 +102,12 @@
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 }
-            ]
+            ],
+            "presentation": {
+                "hidden": false,
+                "group": "trace: Full Setup (debug)",
+                "order": 1
+            }
         },
         {
             "type": "cppdbg",
@@ -101,13 +117,19 @@
             "args": ["-l", "2", "-u", "1", "-vvv"],
             "cwd": "${workspaceFolder}",
             "MIMode": "gdb",
+            "preLaunchTask": "Meson: Build all targets",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 }
-            ]
+            ],
+            "presentation": {
+                "hidden": false,
+                "group": "trace: Full Setup (debug)",
+                "order": 2
+            }
         },
         {
             "type": "cppdbg",
@@ -123,13 +145,19 @@
                 },
             ],
             "MIMode": "gdb",
+            "preLaunchTask": "Meson: Build all targets",
             "setupCommands": [
                 {
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
                 }
-            ]
+            ],
+            "presentation": {
+                "hidden": false,
+                "group": "trace: Full Setup (debug)",
+                "order": 3
+            }
         }
     ],
      "compounds": [
