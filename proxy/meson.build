@@ -31,11 +31,17 @@ proxy_sources = files(
   'window.c',
 )
 
-executable('qwswayland',
-  proxy_sources,
+# Generated Wayland protocol glue — compiled silently, not our code
+wayland_proto_lib = static_library('wayland_proto_generated',
   xdg_shell_src,
   xdg_output_src,
   alpha_modifier_src,
+  c_args: ['-w'],
+)
+
+executable('qwswayland',
+  proxy_sources,
+  link_with: wayland_proto_lib,
   dependencies: [
     qwsproto_dep,
     wayland_client,
