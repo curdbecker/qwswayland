@@ -124,7 +124,7 @@ static int qwswl_resize_buffer(qwswl_state_t *state, qwswl_window_t *win,
      * the region will likely never get smaller, since I am not sure 
      * SysV regions can actually be resized. In this case, the QWS client
      * will rather destroy and recreate it. We will be informed about
-     * this explictely via region events then */
+     * this explicitly via region events then */
     if (qws_shm_update_sysv(&win->client_shm.shm) != 0) {
         return -1;
     }
@@ -146,6 +146,15 @@ static int qwswl_resize_buffer(qwswl_state_t *state, qwswl_window_t *win,
         win->server_shm.size = size;
     }
 
+    /* No need to resize the buffer if the window parameters didn't change.
+     *
+     * Note that this is decoupled from the actual size of the window, 
+     * since the window might be larger but currently its visiblity on
+     * the screen is possibly constrained.
+     */
+    if (win->server_shm.width == width && win->server_shm.height == height)
+        return 0;
+
     if (win->wl_surface) {
         /* we need to make sure that the compositor isn't currently
          * using the buffer, so we need commit and force it to process 
@@ -164,6 +173,8 @@ static int qwswl_resize_buffer(qwswl_state_t *state, qwswl_window_t *win,
 
     win->server_shm.pixels = pixels;
     win->server_shm.buffer = buffer;
+    win->server_shm.width  = width;
+    win->server_shm.height = height;
 
     if (!buffer) {
         return -1;
@@ -222,6 +233,8 @@ static int qwswl_create_or_update_buffer(qwswl_state_t *state, qwswl_window_t *w
     win->server_shm.pixels = pixels;
     win->server_shm.fd     = fd;
     win->server_shm.size   = size;
+    win->server_shm.width  = width;
+    win->server_shm.height = height;
 
     return 0;
 }
@@ -232,15 +245,16 @@ static void position_window_relative_to_parent(qwswl_window_t *win)
     
     assert(parent && win->wl_subsurface);
 
+    int32_t x = win->geometry.x - parent->geometry.x;
+    int32_t y = win->geometry.y - parent->geometry.y;
+
     /* for lower-level windows the position of the subsurface is relative to
      * the parent, so we need to compensate the offset between the two windows */
-    wl_subsurface_set_position(win->wl_subsurface, 
-        win->geometry.x - parent->geometry.x,
-        win->geometry.y - parent->geometry.y);
+    wl_subsurface_set_position(win->wl_subsurface, x, y);
     
     /* In order to avoid weird effects e.g. after the creation of an asynchronous
      * subsurface, we have to manually trigger an update on the parent, so
-     * that our position relative to the parent surface is guranteed also
+     * that our position relative to the parent surface is guaranteed also
      * to be known in the parent surface. */
     wl_surface_commit(parent->wl_surface);
 }
@@ -249,9 +263,6 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
                                 qws_rect_t *rects, int32_t nrects)
 {
     if (!win || nrects <= 0 || !rects) return;
-
-    /* Clip rects in place so we can echo them back to the client */
-    qws_rect_constrain_to_screen(rects, nrects, state->screen_width, state->screen_height);
 
     /* Window geometry updates shall reset x and y position based on the
      * given geometry.
@@ -295,9 +306,23 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
     if (win->parent)
         position_window_relative_to_parent(win);
 
-    /* we may need to resize/create the buffer as well */
-    assert(qwswl_create_or_update_buffer(state, win,
-        win->geometry.width, win->geometry.height) == 0);
+    {
+        qws_rect_t *translated_rects = qws_rect_clone(win->geometry.rects,
+        win->geometry.nrects);
+        assert(translated_rects);
+        qws_clip_rects(translated_rects, win->geometry.nrects, 
+            state->screen_width - 1, state->screen_height - 1);
+
+        qws_rect_bounding_box(translated_rects, win->geometry.nrects, 
+            &min_x1, &min_y1, &max_x2, &max_y2);
+        int32_t visible_width = max_x2 - min_x1 + 1;
+        int32_t visible_height = max_y2 - min_y1 + 1;
+
+        /* we may need to resize/create the buffer as well */
+        assert(qwswl_create_or_update_buffer(state, win,
+            visible_width, visible_height) == 0);
+        free(translated_rects);
+    }
 }
 
 bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win,
@@ -308,22 +333,22 @@ bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win,
 
     /* Only toplevel windows can be moved; subsurface moves might need special
      * consideration regarding coordinate space and parent relationships
-     * and does not intuitvely make that much sense. */
+     * and does not intuitively make that much sense. */
     assert(!win->parent);
 
     /* The offset is meant to be additive as the source code references
      * found by Claude and my intuition thought, so have to apply them
      * by re-translating the existing rects. */
     qws_rect_translate(win->geometry.rects, win->geometry.nrects, dx, dy);
+    qwswl_update_geometry(state, win, win->geometry.rects, win->geometry.nrects);
 
-    /* Re-calculate geometry after translating stored rects */
-    qwswl_update_geometry(state, win, win->geometry.rects, 
-        win->geometry.nrects);
-
-    /* We need to ignore rectangles in repaint events for the first repaint
-     * command after a move, since the referring to the previous window position
-     * for some reason. See comment in qwswl_update_geometry below. */
-    win->force_full_repaint = true;
+    if (win->wl_surface) {
+        qws_rect_t full_window = {
+            win->geometry.x, win->geometry.y,
+            win->geometry.width - 1, win->geometry.height - 1,
+        };
+        qwswl_update_surface(state, win, &full_window, 1);
+    }
 
     return true;
 }
@@ -336,7 +361,7 @@ static void draw_debug_border(qwswl_window_t *win,
 
     if (w <= 0 || h <= 0) return;
     uint32_t *pixels = (uint32_t *)win->server_shm.pixels;
-    int32_t  stride  = win->geometry.width;
+    int32_t  stride  = win->server_shm.width;
 
     int32_t rim = c_min(RIM, c_min(w / 2, h / 2)); /* clamp for tiny rects */
 
@@ -372,62 +397,28 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
     assert(win->wl_surface);
 
     /* assert that the QWS shm size and the WL buffer size can contain
-     * the window surface */
+     * the visible surface */
     {
         size_t surface_bytes = 
-            win->geometry.width * win->geometry.height * bytes_per_pixel;
+            win->server_shm.width * win->server_shm.height * bytes_per_pixel;
         assert(win->client_shm.shm.size >= surface_bytes 
             && win->server_shm.size >= surface_bytes);
     }
+    
+    assert(qwslock_lock(win->client->lock, QWS_LOCK_BACKINGSTORE) >= 0);
 
-    /* 
-     * We are not going to entertain this nonsense anymore. 
-     *
-     * The QWS protocol seems to be filled with nasty habits that 
-     * also show up with an unmodified QWS server after dumping
-     * the conversation with our example client. This can cause
-     * quite some severe confusion about the shared understanding
-     * of the coordinate space.
-     * 
-     * This aspect is one of the very critical ones to understand
-     * or it will cause confusion for days:
-     * 
-     * The RegionMove command physically moves the window on the screen
-     * and thereby also translates the rects reported by the client
-     * to the server as expected by the move, e.g. when a rect is moved
-     * by (dx,dy), then all coordinates in each rect are also moved by
-     * (dx,dy). And this is quite expected.
-     * 
-     * Unfortunately however, that's when it gets then really annoying,
-     * since the first repaint event actually then still refers to the 
-     * old position of the window. This might be a way for the client
-     * to let the server know that after moving the window, the
-     * old position needs to be repainted? Although this is quite
-     * unnecessary, since the RegionMove command tells the server 
-     * everything it needs to know.
-     * 
-     * For us this is even more inconvenient, since we then are getting
-     * very confused when trying to map the global screen coordinates
-     * given by the event again into Wayland surface local coordinates.
-     * There is no surface anymore at the old coordinates, since we
-     * already moved it, so we need to expect and deal with this.
-     * 
-     * Therefore, we're going to simply ignore the given rects on the
-     * first RepaintRegion after a move (or whenever this might might be
-     * required as well) and force a full repaint of the window given its
-     * translated rects;
-     */
-    if (win->force_full_repaint) {
-        rects = win->geometry.rects;
-        nrects = win->geometry.nrects;
-        win->force_full_repaint = false;
-    }
+    qws_rect_t *translated_rects = qws_rect_clone(rects, nrects);
+    assert(translated_rects);
+
+    qws_rect_translate(translated_rects, nrects, -win->geometry.x, -win->geometry.y);
+    qws_clip_rects(translated_rects, nrects, win->server_shm.width - 1, 
+        win->server_shm.height - 1);
 
     for (int i = 0; i < nrects; i++) {
-        int32_t copy_x = rects[i].x1 - win->geometry.x;
-        int32_t copy_y = rects[i].y1 - win->geometry.y;
-        int32_t copy_w = rects[i].x2 - rects[i].x1 + 1;
-        int32_t copy_h = rects[i].y2 - rects[i].y1 + 1;
+        int32_t copy_x = translated_rects[i].x1;
+        int32_t copy_y = translated_rects[i].y1;
+        int32_t copy_w = translated_rects[i].x2 - translated_rects[i].x1 + 1;
+        int32_t copy_h = translated_rects[i].y2 - translated_rects[i].y1 + 1;
 
     /* 
      * Some deeper debugging in order to quickly find out what the actual
@@ -447,29 +438,29 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
         if (cond)                                                               \
         { \
             QWS_TRACE("update_surface skip rect[%d]: " #cond \
-                " (copy_x=%d copy_y=%d copy_w=%d copy_h=%d win_w=%d win_h=%d)", \
+                " (copy_x=%d copy_y=%d copy_w=%d copy_h=%d server_w=%lu server_h=%lu)", \
                 i, copy_x, copy_y, copy_w, copy_h, \
-                win->geometry.width, win->geometry.height); \
+                win->server_shm.width, win->server_shm.height); \
             assert(!(cond)); \
         } } while(0)
         DBG_RECT_ASSERT(copy_x < 0);
         DBG_RECT_ASSERT(copy_y < 0);
         DBG_RECT_ASSERT(copy_w < 0);
         DBG_RECT_ASSERT(copy_h < 0);
-        DBG_RECT_ASSERT(copy_x >= win->geometry.width);
-        DBG_RECT_ASSERT(copy_y >= win->geometry.height);
-        DBG_RECT_ASSERT(copy_w > win->geometry.width);
-        DBG_RECT_ASSERT(copy_h > win->geometry.height);
-        DBG_RECT_ASSERT((copy_x + copy_w) > win->geometry.width);
-        DBG_RECT_ASSERT((copy_y + copy_h) > win->geometry.height);
+        DBG_RECT_ASSERT(copy_x >= win->server_shm.width);
+        DBG_RECT_ASSERT(copy_y >= win->server_shm.height);
+        DBG_RECT_ASSERT(copy_w > win->server_shm.width);
+        DBG_RECT_ASSERT(copy_h > win->server_shm.height);
+        DBG_RECT_ASSERT((copy_x + copy_w) > win->server_shm.width);
+        DBG_RECT_ASSERT((copy_y + copy_h) > win->server_shm.height);
 #undef DBG_RECT_ASSERT
 
         uint32_t row_offset = copy_x * bytes_per_pixel;
-        uint32_t row_bytes = win->geometry.width * bytes_per_pixel;
+        uint32_t row_bytes = win->server_shm.width * bytes_per_pixel;
 
         for (int32_t j = 0; j < copy_h; j++) {
             uint32_t y = copy_y + j;
-            if (y > win->geometry.height)
+            if (y > win->server_shm.height)
                 break;
     
             uint32_t off = row_offset + (y * row_bytes);
@@ -486,7 +477,7 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
 
     if (state->debug_draw_rects)
         draw_debug_border(win, 0, 0,
-                          win->geometry.width, win->geometry.height,
+                          win->server_shm.width, win->server_shm.height,
                           0xFFFFFF00); /* yellow — full window geometry */
 
     wl_surface_attach(win->wl_surface, win->server_shm.buffer, 0, 0);
@@ -496,6 +487,10 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
 
     wl_surface_commit(win->wl_surface);
     wl_display_flush(state->wl_display);
+
+    free(translated_rects);
+
+    assert(qwslock_unlock(win->client->lock, QWS_LOCK_BACKINGSTORE) >= 0);
 }
 
 /* ================================================================

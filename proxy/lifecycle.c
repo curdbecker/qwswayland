@@ -237,7 +237,7 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
     } else {
         fprintf(stderr, 
             "[qwswayland] WARNING: No wl_seat found - input devices will be unavailable\n" \
-            "             THIS IS LIKELY NOT WHAT YOU WANT - EVEN WINDOW DRAWING COULD BE AFFECTED!\n");
+            "             Window focus will be unreliable.\n");
     }
 
     state->xdg_output = 

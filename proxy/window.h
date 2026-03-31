@@ -47,6 +47,8 @@ typedef struct qwswl_window {
         int               fd;
         size_t            size;
         int32_t           format;       /* wl_shm_format */
+        size_t            width;
+        size_t            height;
     } server_shm;
 
     /* QWS client pixel buffer (SysV shm, permanently attached, not owned) */
@@ -64,7 +66,6 @@ typedef struct qwswl_window {
     uint8_t              opacity;
     qws_window_flags_t   win_flags;
     bool                 fixed;
-    bool                 force_full_repaint;
 } qwswl_window_t;
 
 /* Allocate data strctures to collect information about a QWS window.*/
