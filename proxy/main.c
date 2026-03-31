@@ -38,14 +38,18 @@ static void usage(const char *prog)
         "  -w, --width W       Screen width to report to QWS clients (default: 800)\n"
         "  -h, --height H      Screen height to report (default: 480)\n"
         "  -b, --depth D       Color depth in bpp (default: 32)\n"
-        "  -v, --verbose       Increase verbosity (can be repeated: -v/-vv/-vvv)\n"
-        "                        -v    one-line per packet (type + sizes)\n"
-        "                        -vv   decode struct fields\n"
-        "                        -vvv  full hex dump of all payloads\n"
-        "  -x, --exclude LIST  Comma-separated list of packet type names or numbers to\n"
-        "                        suppress from trace output. Prefix with 'cmd:' or 'evt:'\n"
-        "                        to restrict to commands or events; unprefixed names are\n"
-        "                        matched against both. Example: -x mouse,key,cmd:Region\n"
+        "  -v, --verbose LEVEL Trace verbosity level (default: off). LEVEL is one of:\n"
+        "                        off      no tracing\n"
+        "                        basic    one-line per packet (type + sizes)\n"
+        "                        brief    + key fields; bounding box for rects\n"
+        "                        fields   + full decoded struct fields\n"
+        "                        hexdump  + hex dump of all payloads\n"
+        "  -x, --exclude LIST  Comma-separated packet type names to suppress.\n"
+        "                        Prefix with 'cmd:' or 'evt:' to restrict direction.\n"
+        "                        Example: -x mouse,key,cmd:Region\n"
+        "  -i, --include LIST  Comma-separated packet type names to trace exclusively.\n"
+        "                        When set, only listed types are logged (before -x).\n"
+        "                        Example: -i cmd:RepaintRegion,evt:Region\n"
         "  -D, --debug-rects   Draw a red border around each repaint rect\n"
         "  -P, --pcap  FILE    Write captured packets to a pcapng file.\n"
         "                        Each frame is one QWS message (DLT_USER0).\n"
@@ -67,18 +71,16 @@ int main(int argc, char *argv[])
     int32_t width = 0;
     int32_t height = 0;
     int32_t depth = 32;
-    int verbose = 0;
     bool debug_draw_rects = false;
-    uint64_t exclude_cmd_mask = 0;
-    uint64_t exclude_evt_mask = 0;
 
     static struct option long_opts[] = {
-        { "display",   required_argument, 0, 'd' },
-        { "width",     required_argument, 0, 'w' },
-        { "height",    required_argument, 0, 'h' },
-        { "depth",     required_argument, 0, 'b' },
-        { "verbose",   no_argument,       0, 'v' },
+        { "display",     required_argument, 0, 'd' },
+        { "width",       required_argument, 0, 'w' },
+        { "height",      required_argument, 0, 'h' },
+        { "depth",       required_argument, 0, 'b' },
+        { "verbose",     required_argument, 0, 'v' },
         { "exclude",     required_argument, 0, 'x' },
+        { "include",     required_argument, 0, 'i' },
         { "debug-rects", no_argument,       0, 'D' },
         { "pcap",        required_argument, 0, 'P' },
         { "help",        no_argument,       0, 'H' },
@@ -86,14 +88,31 @@ int main(int argc, char *argv[])
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "d:w:h:b:vx:DP:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "d:w:h:b:v:x:i:DP:", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'd': qws_display = atoi(optarg); break;
         case 'w': width = atoi(optarg); break;
         case 'h': height = atoi(optarg); break;
         case 'b': depth = atoi(optarg); break;
-        case 'v': verbose++; break;
-        case 'x': qws_trace_parse_exclude_list(optarg, &exclude_cmd_mask, &exclude_evt_mask); break;
+        case 'v':
+            if (!qws_trace_parse_level(optarg)) {
+                fprintf(stderr, "Unknown trace level '%s'. "
+                        "Use: off, basic, brief, fields, hexdump\n", optarg);
+                return 1;
+            }
+            break;
+        case 'x':
+            if (!qws_trace_parse_exclude_list(optarg)) {
+                fprintf(stderr, "Unknown packet type in --exclude list: %s\n", optarg);
+                return 1;
+            }
+            break;
+        case 'i':
+            if (!qws_trace_parse_include_list(optarg)) {
+                fprintf(stderr, "Unknown packet type in --include list: %s\n", optarg);
+                return 1;
+            }
+            break;
         case 'D': debug_draw_rects = true; break;
         case 'P': pcap_path = optarg; break;
         case 'H':
@@ -103,20 +122,14 @@ int main(int argc, char *argv[])
         }
     }
 
-    /* Clamp verbose to max level */
-    if (verbose > 3) verbose = 3;
-
     /* Set up signal handling */
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     signal(SIGPIPE, SIG_IGN);  /* Don't die on broken client sockets */
 
-    qws_trace_set_level(verbose);
-    qws_trace_set_exclude_mask(exclude_cmd_mask, exclude_evt_mask);
-
     fprintf(stderr, "QWSWayland v0.1.0 - QWS->Wayland proxy\n");
-    fprintf(stderr, "Display :%d, screen %dx%d@%dbpp, verbose=%d, ipc=%s\n",
-            qws_display, width, height, depth, verbose,
+    fprintf(stderr, "Display :%d, screen %dx%d@%dbpp, level=%d, ipc=%s\n",
+            qws_display, width, height, depth, qws_trace_get_level(),
 #ifdef QWS_IPC_POSIX
             "posix"
 #else

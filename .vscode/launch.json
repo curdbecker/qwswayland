@@ -10,9 +10,12 @@
             "request": "launch",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
             "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
-            "args": ["-vv", "-x", "Mouse,SelectCursor", "-D"],
-            // "args": [],
-            "environment": [{ "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" }],
+            //"args": ["-v", "brief", "-D", "-d", "3", "-P", "debug_move.pcapng"],
+            "args": ["-v", "brief", "-x", "Mouse,SelectCursor,RepaintRegion", "-d", "3", "-D"],
+            "environment": [
+                { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
+                { "name": "WAYLAND_DEBUG",   "value": "0" }
+            ],
             "MIMode": "gdb",
             "envFile": "${workspaceFolder}/${config:mesonbuild.buildFolder}/meson-vscode.env",
             "preLaunchTask": "Meson: Build all targets",
@@ -87,7 +90,7 @@
             "name": "trace: 1. QWS Server",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example",
             "args": ["-qws", "-display", "VNC:size=1024x768:depth=32:1"],
-            "cwd": "/tmp",
+            "cwd": "${workspaceFolder}/builddir/example",
             "environment": [
                 {
                     "name": "LD_LIBRARY_PATH",
@@ -114,7 +117,7 @@
             "request": "launch",
             "name": "trace: 2. Proxy",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/trace_proxy/qws_trace_proxy",
-            "args": ["-l", "2", "-u", "1", "-vvv"],
+            "args": ["-l", "2", "-u", "1", "-v", "brief"],
             "cwd": "${workspaceFolder}",
             "MIMode": "gdb",
             "preLaunchTask": "Meson: Build all targets",
@@ -137,7 +140,7 @@
             "name": "trace: 3. QWS Client",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example",
             "args": ["-display", ":2"],
-            "cwd": "/tmp",
+            "cwd": "${workspaceFolder}/builddir/example",
             "environment": [
                 {
                     "name": "LD_LIBRARY_PATH",

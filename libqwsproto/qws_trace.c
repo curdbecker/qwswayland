@@ -6,6 +6,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "qws_trace.h"
+#include "qws_rect.h"
 #include "qws_event_factory.h"
 #include "qws_unicode.h"
 #include <stdlib.h>
@@ -20,11 +21,10 @@
  * Global state
  * ================================================================ */
 
-static int                g_trace_level       = QWS_TRACE_OFF;
-static FILE              *g_trace_output      = NULL;
-static uint64_t           g_exclude_cmd_mask  = 0;
-static uint64_t           g_exclude_evt_mask  = 0;
-static qws_pcap_writer_t *g_pcap_writer       = NULL;
+static int                g_trace_level   = QWS_TRACE_OFF;
+static FILE              *g_trace_output  = NULL;
+static uint64_t           g_filter_mask   = QWS_TRACE_MASK_ALL;
+static qws_pcap_writer_t *g_pcap_writer   = NULL;
 
 static FILE *trace_fp(void)
 {
@@ -46,10 +46,14 @@ void qws_trace_set_output(FILE *fp)
     g_trace_output = fp;
 }
 
-void qws_trace_set_exclude_mask(uint64_t cmd_mask, uint64_t evt_mask)
+void qws_trace_set_filter_mask(uint64_t mask)
 {
-    g_exclude_cmd_mask = cmd_mask;
-    g_exclude_evt_mask = evt_mask;
+    g_filter_mask = mask;
+}
+
+uint64_t qws_trace_get_filter_mask(void)
+{
+    return g_filter_mask;
 }
 
 void qws_trace_set_pcap_writer(qws_pcap_writer_t *w)
@@ -57,19 +61,15 @@ void qws_trace_set_pcap_writer(qws_pcap_writer_t *w)
     g_pcap_writer = w;
 }
 
-void qws_trace_get_exclude_mask(uint64_t *cmd_mask, uint64_t *evt_mask)
-{
-    if (cmd_mask) *cmd_mask = g_exclude_cmd_mask;
-    if (evt_mask) *evt_mask = g_exclude_evt_mask;
-}
-
-void qws_trace_parse_exclude_list(const char *list,
-                                   uint64_t *cmd_mask, uint64_t *evt_mask)
+/* Build a combined filter-mask bit pattern from a comma-separated list.
+ * CMD types occupy bits 0-31, EVT types bits 32-63. */
+static bool parse_filter_list(const char *list, uint64_t *out)
 {
     char *buf = strdup(list);
     if (!buf)
-        return;
+        return false;
 
+    bool ok = true;
     char *tok = strtok(buf, ",");
     while (tok) {
         int check_cmd = 1, check_evt = 1;
@@ -79,26 +79,70 @@ void qws_trace_parse_exclude_list(const char *list,
         else if (strncmp(tok, "evt:", 4) == 0) { name = tok + 4; check_cmd = 0; }
 
         int matched = 0;
-        for (int i = 0; i < 64; i++) {
+        for (int i = 0; i < 32; i++) {
             if (check_cmd && strcasecmp(qws_command_type_name(i), name) == 0) {
-                *cmd_mask |= (1ULL << i);
+                *out |= QWS_TRACE_CMD_BIT(i);
                 matched = 1;
             }
             if (check_evt && strcasecmp(qws_event_type_name(i), name) == 0) {
-                *evt_mask |= (1ULL << i);
+                *out |= QWS_TRACE_EVT_BIT(i);
                 matched = 1;
             }
         }
         if (!matched) {
-            fprintf(stderr, "Warning: unknown packet type name '%s' in --exclude list\n", tok);
-            free(buf);
-            exit(1);
+            fprintf(stderr, "Warning: unknown packet type name '%s'\n", tok);
+            ok = false;
+            break;
         }
 
         tok = strtok(NULL, ",");
     }
 
     free(buf);
+    return ok;
+}
+
+bool qws_trace_parse_exclude_list(const char *list)
+{
+    uint64_t bits = 0;
+    if (!parse_filter_list(list, &bits))
+        return false;
+    g_filter_mask &= ~bits;
+    return true;
+}
+
+bool qws_trace_parse_include_list(const char *list)
+{
+    uint64_t bits = 0;
+    if (!parse_filter_list(list, &bits))
+        return false;
+    g_filter_mask = bits;
+    return true;
+}
+
+bool qws_trace_parse_level(const char *name)
+{
+    static const struct { const char *name; int level; } levels[] = {
+        { "off",     QWS_TRACE_OFF     },
+        { "basic",   QWS_TRACE_BASIC   },
+        { "brief",   QWS_TRACE_BRIEF   },
+        { "fields",  QWS_TRACE_FIELDS  },
+        { "hexdump", QWS_TRACE_HEXDUMP },
+    };
+    for (size_t i = 0; i < sizeof(levels) / sizeof(levels[0]); i++) {
+        if (strcasecmp(name, levels[i].name) == 0) {
+            qws_trace_set_level(levels[i].level);
+            return true;
+        }
+    }
+    /* Accept bare integers */
+    char *end;
+    long v = strtol(name, &end, 10);
+    if (*end == '\0' && v >= QWS_TRACE_OFF && v <= QWS_TRACE_HEXDUMP) {
+        qws_trace_set_level((int)v);
+        return true;
+    }
+    return false;
 }
 
 /* ================================================================
@@ -183,11 +227,19 @@ static void print_surface_flags(FILE *fp, int32_t flags)
     if (flags & QWS_SURFACE_OPAQUE)    { fprintf(fp, "%sOpaque",    first ? "" : "|"); }
 }
 
-static void print_rects(FILE *fp, const qws_rect_t *rects, int nr_rects) {
+void qws_trace_print_rects(FILE *fp, const qws_rect_t *rects, int nr_rects) {
     for (int i = 0; i < nr_rects; i++) {
         fprintf(fp, "        rect[%d]: (%d,%d) (%d,%d)\n",
         i, rects[i].x1, rects[i].y1, rects[i].x2, rects[i].y2);
     }
+}
+
+void qws_trace_print_rects_bbox(FILE *fp, const qws_rect_t *rects, int nr_rects)
+{
+    int32_t x1, y1, x2, y2;
+    qws_rect_bounding_box(rects, nr_rects, &x1, &y1, &x2, &y2);
+    fprintf(fp, "        bbox: (%d,%d) (%d,%d) [%d rects]\n",
+            x1, y1, x2, y2, nr_rects);
 }
 
 static void print_window_flags(FILE *fp, uint32_t flags)
@@ -230,7 +282,7 @@ static void print_utf16le_field(FILE *fp, const char *field_name,
         const uint8_t *field_value, size_t field_len) {
     char *value;
 
-    if (!field_value || field_len < 0) {
+    if (!field_value || field_len <= 0) {
         fprintf(fp, "      %s=<not present>\n", field_name);
         return;
     }
@@ -250,7 +302,7 @@ static void print_utf16le_field(FILE *fp, const char *field_name,
 
 void qws_trace_decode_event(FILE *fp, int32_t type,
                               const void *simple_data, int32_t simple_len,
-                              const void *raw_data, int32_t raw_len)
+                              const void *raw_data, int32_t raw_len, bool brief)
 {
 
     switch (type) {
@@ -309,8 +361,12 @@ void qws_trace_decode_event(FILE *fp, int32_t type,
             fprintf(fp, "      window=%d, nrects=%d, type=%d\n",
                     d->window, d->nrectangles, d->type);
             /* Decode rectangles from raw data */
-            if (raw_data && raw_len > 0)
-                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+            if (raw_data && raw_len > 0) {
+                if (brief && d->nrectangles > 1)
+                    qws_trace_print_rects_bbox(fp, (qws_rect_t *) raw_data, d->nrectangles);
+                else
+                    qws_trace_print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+            }
         }
         break;
     }
@@ -329,7 +385,7 @@ void qws_trace_decode_event(FILE *fp, int32_t type,
         if (simple_len >= (int32_t)sizeof(qws_evt_max_window_rect_t)) {
             const qws_evt_max_window_rect_t *d = simple_data;
             fprintf(fp, "      window=%d\n", d->window);
-            print_rects(fp, &d->rect, 1);
+            qws_trace_print_rects(fp, &d->rect, 1);
         }
         break;
     }
@@ -475,7 +531,7 @@ void qws_trace_decode_event(FILE *fp, int32_t type,
 
 void qws_trace_decode_command(FILE *fp, int32_t type,
                                const void *simple_data, int32_t simple_len,
-                               const void *raw_data, int32_t raw_len)
+                               const void *raw_data, int32_t raw_len, bool brief)
 {
     (void)raw_data;
 
@@ -510,7 +566,10 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
                     (qws_cmd_region_surface_data_t *) &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t) 
                         + d->surfacekeylength * 2];
 
-                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+                if (brief && d->nrectangles > 1)
+                    qws_trace_print_rects_bbox(fp, (qws_rect_t *) raw_data, d->nrectangles);
+                else
+                    qws_trace_print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
 
                 if (qws_convert_from_utf16(&surface_key, (const uint8_t *)
                         &((char *) raw_data)[d->nrectangles * sizeof(qws_rect_t)],
@@ -545,9 +604,13 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
             const qws_cmd_repaint_region_t *d = simple_data;
             fprintf(fp, "      window=%d, nrects=%d, opaque=%d\n",
                     d->window, d->nrectangles, d->opaque);
-            print_window_flags(fp, d->window_flags);
-            if (raw_data && raw_len > 0) 
-                print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+            if (!brief) print_window_flags(fp, d->window_flags);
+            if (raw_data && raw_len > 0) {
+                if (brief && d->nrectangles > 1)
+                    qws_trace_print_rects_bbox(fp, (qws_rect_t *) raw_data, d->nrectangles);
+                else
+                    qws_trace_print_rects(fp, (qws_rect_t *) raw_data, d->nrectangles);
+            }
         }
         break;
     }
@@ -781,8 +844,12 @@ void qws_trace_decode_command(FILE *fp, int32_t type,
                 (d->type == QWS_EMBED_REGION) ? "Region" : "unknown";
             fprintf(fp, "      embedder=%d, embedded=%d, type=%s(%d), nrects=%d\n",
                     d->embedder, d->embedded, type_str, d->type, d->nrects);
-            if (raw_data && d->nrects > 0)
-                print_rects(fp, (const qws_rect_t *)raw_data, d->nrects);
+            if (raw_data && d->nrects > 0) {
+                if (brief && d->nrects > 1)
+                    qws_trace_print_rects_bbox(fp, (const qws_rect_t *)raw_data, d->nrects);
+                else
+                    qws_trace_print_rects(fp, (const qws_rect_t *)raw_data, d->nrects);
+            }
         }
         break;
     }
@@ -832,10 +899,10 @@ void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt, bool out
     FILE *fp = trace_fp();
     int32_t type = pkt->header.type;
 
-    /* Check exclusion mask before doing any work */
-    if (type >= 0 && type < 64) {
-        uint64_t mask = outgoing ? g_exclude_evt_mask : g_exclude_cmd_mask;
-        if (mask & (1ULL << type))
+    /* Check filter mask before doing any work */
+    if (type >= 0 && type < 32) {
+        uint64_t bit = outgoing ? QWS_TRACE_EVT_BIT(type) : QWS_TRACE_CMD_BIT(type);
+        if (!(g_filter_mask & bit))
             return;
     }
 
@@ -853,20 +920,21 @@ void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt, bool out
             type_name, type,
             pkt->header.simple_len, pkt->header.raw_len);
 
-    /* Level 2+: decoded fields */
-    if (g_trace_level >= QWS_TRACE_FIELDS) {
+    /* Level 2+: decoded fields (brief at 2, full at 3+) */
+    if (g_trace_level >= QWS_TRACE_BRIEF) {
+        bool brief = (g_trace_level < QWS_TRACE_FIELDS);
         if (outgoing) {
             qws_trace_decode_event(fp, type,
                                     pkt->simple_data, pkt->header.simple_len,
-                                    pkt->raw_data, pkt->header.raw_len);
+                                    pkt->raw_data, pkt->header.raw_len, brief);
         } else {
             qws_trace_decode_command(fp, type,
                                       pkt->simple_data, pkt->header.simple_len,
-                                      pkt->raw_data, pkt->header.raw_len);
+                                      pkt->raw_data, pkt->header.raw_len, brief);
         }
     }
 
-    /* Level 3+: hex dump of all payload data */
+    /* Level 4+: hex dump of all payload data */
     if (g_trace_level >= QWS_TRACE_HEXDUMP) {
         if (pkt->header.simple_len > 0 && pkt->simple_data) {
             fprintf(fp, "    simpleData (%d bytes):\n", pkt->header.simple_len);

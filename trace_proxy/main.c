@@ -45,16 +45,21 @@ static void usage(const char *prog)
         "Options:\n"
         "  -l, --listen N      QWS display number to listen on (default: 1)\n"
         "  -u, --upstream N    Upstream QWS server display number (default: 0)\n"
-        "  -v, --verbose       Increase verbosity (repeatable: -v/-vv/-vvv)\n"
-        "                        -v    one-line per packet (type + sizes)\n"
-        "                        -vv   decode struct fields\n"
-        "                        -vvv  full hex dump of all payloads\n"
-        "  -P, --pcap  FILE    Write captured packets to a pcapng file.\n"
-        "                        Each frame is one QWS message (DLT_USER0).\n"
-        "                        Open with Wireshark + wireshark/qws_dissector.lua.\n"
+        "  -v, --verbose LEVEL Trace verbosity level (default: basic). LEVEL is one of:\n"
+        "                        off      no tracing\n"
+        "                        basic    one-line per packet (type + sizes)\n"
+        "                        brief    + key fields; bounding box for rects\n"
+        "                        fields   + full decoded struct fields\n"
+        "                        hexdump  + hex dump of all payloads\n"
         "  -x, --exclude LIST  Comma-separated packet type names to suppress.\n"
         "                        Prefix with 'cmd:' or 'evt:' to restrict direction.\n"
         "                        Example: -x mouse,key,cmd:Region\n"
+        "  -i, --include LIST  Comma-separated packet type names to trace exclusively.\n"
+        "                        When set, only listed types are logged (before -x).\n"
+        "                        Example: -i cmd:RepaintRegion,evt:Region\n"
+        "  -P, --pcap  FILE    Write captured packets to a pcapng file.\n"
+        "                        Each frame is one QWS message (DLT_USER0).\n"
+        "                        Open with Wireshark + wireshark/qws_dissector.lua.\n"
         "  --help              Show this help\n"
         "\n"
         "The proxy listens on:\n"
@@ -67,7 +72,7 @@ static void usage(const char *prog)
         "  myqws -qws -display ':0'\n"
         "\n"
         "  # Terminal 2: trace proxy\n"
-        "  qws_trace_proxy -l 1 -u 0 -vv\n"
+        "  qws_trace_proxy -l 1 -u 0 -v brief\n"
         "\n"
         "  # Terminal 3: Qt app pointed at display 1\n"
         "  myapp -display ':1'\n"
@@ -80,30 +85,48 @@ int main(int argc, char *argv[])
 {
     int listen_display = 1;
     int upstream_display = 0;
-    int verbose = 0;
-    uint64_t exclude_cmd_mask = 0;
-    uint64_t exclude_evt_mask = 0;
 
     const char *pcap_path = NULL;
+
+    /* default to basic so traffic is visible without -v */
+    qws_trace_set_level(QWS_TRACE_BASIC);
 
     static struct option long_opts[] = {
         { "listen",      required_argument, 0, 'l' },
         { "upstream",    required_argument, 0, 'u' },
-        { "verbose",     no_argument,       0, 'v' },
-        { "pcap",        required_argument, 0, 'P' },
+        { "verbose",     required_argument, 0, 'v' },
         { "exclude",     required_argument, 0, 'x' },
+        { "include",     required_argument, 0, 'i' },
+        { "pcap",        required_argument, 0, 'P' },
         { "help",        no_argument,       0, 'H' },
         { 0, 0, 0, 0 }
     };
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "l:u:vP:x:", long_opts, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "l:u:v:x:i:P:H", long_opts, NULL)) != -1) {
         switch (opt) {
         case 'l': listen_display = atoi(optarg); break;
         case 'u': upstream_display = atoi(optarg); break;
-        case 'v': verbose++; break;
+        case 'v':
+            if (!qws_trace_parse_level(optarg)) {
+                fprintf(stderr, "Unknown trace level '%s'. "
+                        "Use: off, basic, brief, fields, hexdump\n", optarg);
+                return 1;
+            }
+            break;
+        case 'x':
+            if (!qws_trace_parse_exclude_list(optarg)) {
+                fprintf(stderr, "Unknown packet type in --exclude list: %s\n", optarg);
+                return 1;
+            }
+            break;
+        case 'i':
+            if (!qws_trace_parse_include_list(optarg)) {
+                fprintf(stderr, "Unknown packet type in --include list: %s\n", optarg);
+                return 1;
+            }
+            break;
         case 'P': pcap_path = optarg; break;
-        case 'x': qws_trace_parse_exclude_list(optarg, &exclude_cmd_mask, &exclude_evt_mask); break;
         case 'H':
         default:
             usage(argv[0]);
@@ -111,17 +134,13 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (verbose > 3) verbose = 3;
-
     signal(SIGINT,  signal_handler);
     signal(SIGTERM, signal_handler);
     signal(SIGPIPE, SIG_IGN);
 
-    qws_trace_set_level(verbose);
-    qws_trace_set_exclude_mask(exclude_cmd_mask, exclude_evt_mask);
 
-    fprintf(stderr, "qws_trace_proxy: listen=:%d  upstream=:%d  verbose=%d\n",
-            listen_display, upstream_display, verbose);
+    fprintf(stderr, "qws_trace_proxy: listen=:%d  upstream=:%d  level=%d\n",
+            listen_display, upstream_display, qws_trace_get_level());
 
     if (qwstrace_init(&g_state, listen_display, upstream_display) != 0) {
         fprintf(stderr, "Initialization failed. Exiting.\n");

@@ -34,7 +34,7 @@
             "type": "shell",
             "command": "${workspaceFolder}/builddir/example/example -qws -display VNC:size=1024x768:depth=32:1",
             "options": {
-                "cwd": "/tmp",
+                "cwd": "${workspaceFolder}/builddir/example",
                 "env": {
                     "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib",
                 }
@@ -56,7 +56,7 @@
         {
             "label": "trace: 2. Proxy",
             "type": "shell",
-            "command": "${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1 -vv",
+            "command": "${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
@@ -77,12 +77,11 @@
         {
             "label": "trace: 3. QWS Client",
             "type": "shell",
-            "command": "${workspaceFolder}/builddir/example/example",
+            "command": "${workspaceFolder}/builddir/example/example -display :2",
             "options": {
-                "cwd": "/tmp",
+                "cwd": "${workspaceFolder}/builddir/example",
                 "env": {
                     "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib",
-                    "QWS_DISPLAY": ":2"
                 }
             },
             "isBackground": true,
