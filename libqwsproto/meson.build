@@ -20,6 +20,7 @@ pcap_args = libpcap_dep.found() ? ['-DQWS_HAVE_PCAP'] : []
 
 qwsproto_deps = [
   dependency('threads'),
+  dependency('pixman-1'),
   libpcap_dep,
   cc.find_library('rt', required: false),
 ]
