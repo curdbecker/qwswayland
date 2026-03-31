@@ -15,15 +15,19 @@ qwsproto_sources = files(
   'qws_trace.c',
 )
 
+libpcap_dep = dependency('libpcap', required: false)
+pcap_args = libpcap_dep.found() ? ['-DQWS_HAVE_PCAP'] : []
+
 qwsproto_deps = [
   dependency('threads'),
-  dependency('libpcap'),
+  libpcap_dep,
   cc.find_library('rt', required: false),
 ]
 
 qwsproto_lib = static_library('qwsproto',
   qwsproto_sources,
   dependencies: qwsproto_deps,
+  c_args: pcap_args,
   install: true,
 )
 
@@ -31,6 +35,7 @@ qwsproto_dep = declare_dependency(
   link_with: qwsproto_lib,
   include_directories: include_directories('.'),
   dependencies: qwsproto_deps,
+  compile_args: pcap_args,
 )
 
 install_headers(

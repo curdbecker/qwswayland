@@ -19,6 +19,6 @@ if get_option('build_trace_proxy')
   subdir('trace_proxy')
 endif
 
-if get_option('build_example')
+if get_option('build_example') and not meson.is_cross_build()
   subdir('example')
 endif

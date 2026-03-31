@@ -5,11 +5,14 @@
 
 #include "qws_pcap.h"
 
+#include <stdio.h>
+
+#ifdef QWS_HAVE_PCAP
+
 #include <pcap/pcap.h>
 #include <sys/time.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
 /* DLT_USER0 = 147  (libpcap's first user-defined link type) */
 #define QWS_PCAP_DLT        147
@@ -110,3 +113,29 @@ void qws_pcap_writer_close(qws_pcap_writer_t *w)
         pcap_close(w->pcap);
     free(w);
 }
+
+#else /* QWS_HAVE_PCAP not available — stub implementations */
+
+/* Opaque stub — never allocated; open() always returns NULL */
+struct qws_pcap_writer { int _unused; };
+
+qws_pcap_writer_t *qws_pcap_writer_open(const char *path)
+{
+    (void)path;
+    fprintf(stderr, "qws_pcap: built without libpcap, capture unavailable\n");
+    return NULL;
+}
+
+int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
+                           uint8_t client_id, const qws_packet_t *pkt)
+{
+    (void)w; (void)direction; (void)client_id; (void)pkt;
+    return -1;
+}
+
+void qws_pcap_writer_close(qws_pcap_writer_t *w)
+{
+    (void)w;
+}
+
+#endif /* QWS_HAVE_PCAP */
