@@ -2,30 +2,13 @@ project('qwswayland', 'c', 'cpp',
   version: '0.1.0',
   meson_version: '1.7.0',
   default_options: {
-    'warning_level': '2',
+    'warning_level': '3',
   })
 
 add_project_arguments(
-  '-Wformat=2',
-  '-Werror=format',
-  '-Werror=format-security',
-  '-Werror=return-type',
-  '-Werror=shadow',
+  '-Werror',
   language: ['c', 'cpp'],
 )
-
-add_project_arguments(
-  '-Werror=int-conversion',
-  '-Werror=incompatible-pointer-types',
-  language: ['c'],
-)
-
-add_project_arguments(
-  '-Werror=implicit-function-declaration',
-  '-Werror=strict-prototypes',
-  language: 'c',
-)
-
 subdir('libqwsproto')
 
 if get_option('build_proxy')
