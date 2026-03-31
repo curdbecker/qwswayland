@@ -7,6 +7,7 @@ executable('qws_trace_proxy',
   trace_proxy_sources,
   dependencies: [
     qwsproto_dep,
+    dependency('threads'),
   ],
   install: true,
 )

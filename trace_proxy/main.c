@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
+
 #include "trace_proxy.h"
 #include "qws_trace.h"
 #include "qws_proto.h"
@@ -16,13 +18,20 @@
 
 static qwstrace_state_t g_state;
 
+/* Set to 1 by the signal handler; checked by wait_until_server_ready()
+ * in trace_proxy.c to abort during the pre-listen retry loop. */
+volatile sig_atomic_t g_interrupted = 0;
+
 static void signal_handler(int sig)
 {
     (void)sig;
-    /* Force the epoll_wait loop to exit by closing the listen fd.
-     * epoll_wait returns EBADF / EINTR and we break out cleanly. */
-    if (g_state.epoll_fd >= 0)
-        close(g_state.epoll_fd);
+    g_interrupted = 1;
+    /* Close listen_fd to unblock the blocking accept() in qwstrace_run(). */
+    int fd = g_state.listen_fd;
+    if (fd >= 0) {
+        g_state.listen_fd = -1;
+        close(fd);
+    }
 }
 
 static void usage(const char *prog)
