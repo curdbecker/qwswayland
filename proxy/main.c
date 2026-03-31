@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
+
 #include "lifecycle.h"
 #include "client.h"
 #include "qws_trace.h"
@@ -123,9 +125,16 @@ int main(int argc, char *argv[])
     }
 
     /* Set up signal handling */
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
-    signal(SIGPIPE, SIG_IGN);  /* Don't die on broken client sockets */
+    struct sigaction sa = { .sa_handler = signal_handler };
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGINT,  &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+
+    struct sigaction sa_ign = { .sa_handler = SIG_IGN };
+    sigemptyset(&sa_ign.sa_mask);
+    sa_ign.sa_flags = 0;
+    sigaction(SIGPIPE, &sa_ign, NULL); /* Don't die on broken client sockets */
 
     fprintf(stderr, "QWSWayland v0.1.0 - QWS->Wayland proxy\n");
     fprintf(stderr, "Display :%d, screen %dx%d@%dbpp, level=%d, ipc=%s\n",

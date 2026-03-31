@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
+
 #include "debug.h"
 #include "client.h"
 #include "window.h"
@@ -39,7 +41,10 @@ static void sigusr1_handler(int sig)
 void qwswl_debug_init(qwswl_state_t *state)
 {
     g_debug_state = state;
-    signal(SIGUSR1, sigusr1_handler);
+    struct sigaction sa = { .sa_handler = sigusr1_handler };
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(SIGUSR1, &sa, NULL);
 }
 
 /* ================================================================
