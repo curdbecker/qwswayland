@@ -468,7 +468,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         break;
     }
 
-    if (qws_is_synchronous_commmand(type)) {
+    if (qws_is_synchronous_command(type)) {
         /* Increment communication semaphore after completing synchronous commands.
          * The client blocks in sendSynchronousCommand() and won't process the event 
          * until it can decrement the semaphore. The server has to increment the semaphore

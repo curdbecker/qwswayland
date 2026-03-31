@@ -876,7 +876,7 @@ const char *qws_im_update_type_name(int type);
 const char *qws_altitude_name(int altitude);
 const char *qws_window_type_str(uint32_t flags);
 const char *qws_focus_flag_str(qws_focus_flag_t flag);
-bool qws_is_synchronous_commmand(int type);
+bool qws_is_synchronous_command(int type);
 
 #ifdef __cplusplus
 }

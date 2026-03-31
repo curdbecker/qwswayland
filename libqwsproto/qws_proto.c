@@ -815,7 +815,7 @@ const char *qws_altitude_name(int altitude)
     }
 }
 
-bool qws_is_synchronous_commmand(int type)
+bool qws_is_synchronous_command(int type)
 {
     switch(type){
     case QWS_CMD_CHANGE_ALTITUDE:
