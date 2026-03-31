@@ -1,6 +1,3 @@
-# pkg_config_path is set per-subproject via the parent's meson.options
-# (qt4_pkg_config_path), so dependency('qt4') finds Qt Embedded here
-# without affecting the rest of the build.
 qt4_mod = import('qt4')
 qt4_dep = dependency('qt4', modules: ['Core', 'Gui'])
 
