@@ -151,23 +151,6 @@ static int _sysv_create(struct lock_base *base, key_t key, int n_sems,
     return 0;
 }
 
-static int sysv_sem_up(int semid, int idx)
-{
-    struct sembuf op = { .sem_num = (unsigned short)idx, .sem_op = 1, .sem_flg = 0 };
-    return sysv_semop_eintr(semid, &op, 1);
-}
-
-static int sysv_sem_down(int semid, int idx)
-{
-    struct sembuf op = { .sem_num = (unsigned short)idx, .sem_op = -1, .sem_flg = 0 };
-    return sysv_semop_eintr(semid, &op, 1);
-}
-
-static int sysv_sem_getval(int semid, int idx)
-{
-    return semctl(semid, idx, GETVAL);
-}
-
 #else /* QWS_IPC_POSIX */
 
 static const char *qwslock_posix_suffixes[LOCK_NUM_SEMS] = {
@@ -231,6 +214,7 @@ static int _posix_sems(struct lock_base *base, int n,
 static void _lock_base_cleanup(struct lock_base *base, bool qlock)
 {
 #ifndef QWS_IPC_POSIX
+    (void) qlock;
     if (base->owned && base->sysv_semid >= 0)
         semctl(base->sysv_semid, 0, IPC_RMID);
 #else
@@ -330,7 +314,17 @@ int qwslock_lock(qwslock_t *lock, qwslock_type_t which)
 
     int ret;
 #ifndef QWS_IPC_POSIX
-    ret = sysv_sem_down(lock->base.sysv_semid, which);
+
+    struct sembuf op = { 
+        .sem_num = (unsigned short)which, 
+        .sem_op = -1, 
+        .sem_flg = 0
+    };
+
+    if (which == QWS_LOCK_BACKINGSTORE)
+        op.sem_flg |= SEM_UNDO;
+    
+    ret = sysv_semop_eintr(lock->base.sysv_semid, &op, 1);
 #else
     if (lock->base.posix_sems[which] == SEM_FAILED)
         return -1;
@@ -350,15 +344,25 @@ int qwslock_unlock(qwslock_t *lock, qwslock_type_t which)
 
     /* Track nesting */
     if (which < 2) {
-        if (lock->lock_count[which] > 1) {
+        if (lock->lock_count[which] > 0) {
             lock->lock_count[which]--;
-            return 0;
+            if (lock->lock_count[which] > 0)
+                return 0;
         }
-        lock->lock_count[which] = 0;
     }
 
 #ifndef QWS_IPC_POSIX
-    return sysv_sem_up(lock->base.sysv_semid, which);
+
+    struct sembuf op = {
+        .sem_num = (unsigned short)which,
+        .sem_op = 1, 
+        .sem_flg = 0
+    };
+
+    if (which == QWS_LOCK_BACKINGSTORE)
+        op.sem_flg |= SEM_UNDO;
+
+    return sysv_semop_eintr(lock->base.sysv_semid, &op, 1);
 #else
     if (lock->base.posix_sems[which] == SEM_FAILED)
         return -1;
@@ -376,7 +380,7 @@ int qwslock_get_value(const qwslock_t *lock, qwslock_type_t which)
     if (which < 0 || which >= LOCK_NUM_SEMS)
         return -1;
 #ifndef QWS_IPC_POSIX
-    return sysv_sem_getval(lock->base.sysv_semid, which);
+    return semctl(lock->base.sysv_semid, which, GETVAL);
 #else
     if (lock->base.posix_sems[which] == SEM_FAILED)
         return -1;
