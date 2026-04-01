@@ -276,11 +276,13 @@ void MainWindow::createStatusBar()
 void MainWindow::readSettings()
 //! [34] //! [36]
 {
-    QSettings settings("Trolltech", "Application Example");
-    QPoint pos = settings.value("pos", QPoint(200, 200)).toPoint();
-    QSize size = settings.value("size", QSize(400, 400)).toSize();
-    // resize(size);
-    // move(pos);
+    // QSettings settings("Trolltech", "Application Example");
+    // QPoint pos = settings.value("pos", QPoint(200, 200)).toPoint();
+    // QSize size = settings.value("size", QSize(400, 400)).toSize();
+    QPoint pos = QPoint(200, 200);
+    QSize size = QSize(400, 400);
+    resize(size);
+    move(pos);
 }
 //! [35] //! [36]
 

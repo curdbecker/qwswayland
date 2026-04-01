@@ -82,13 +82,12 @@ public:
 protected:
     bool eventFilter(QObject *obj, QEvent *event)
     {
+#if 0
+#if 0
         if (event->type() != QEvent::SockAct && event->type() != QEvent::MouseMove)
             qDebug() << "EventFilter: event=" << event
-                << "obj=" << obj << "widget=" << qobject_cast<QWidget *>(obj);
-
-        // if (event->type() == QEvent::ApplicationDeactivate) {
-        //     ::exit(0);
-        // }
+                << "obj=" << obj;
+#endif
 
         // Catch newly created widgets and enable tracking on them
         if (event->type() == QEvent::Create) {
@@ -107,11 +106,12 @@ protected:
             qDebug("DebugCursor: global=(%d,%d) local=(%d,%d) widget=%s btn=0x%x",
                    m_lastGlobalPos.x(), m_lastGlobalPos.y(),
                    me->pos().x(), me->pos().y(),
-                   w ? w->metaObject()->className() : "??",
+                   w ? w->metaObject()->className() : "<NULL>",
                    (int)me->buttons());
-
-            if (w)
+            if (w) {
+                qDebug() << "widget=" << w << "x=" << w->x() << "y=" << w->y();
                 w->update();
+            }
 
         } else if (event->type() == QEvent::Paint)
         {
@@ -130,11 +130,13 @@ protected:
                 p.setBrush(QColor(255, 0, 0));
                 p.drawEllipse(localPos, 4, 4);
             
-                return true;
+                return false;
             }
         }
+#endif
 
-        return QObject::eventFilter(obj, event);
+        /* false -> forward event - true -> filter event */
+        return false;
     }
 private:
     QPoint m_lastGlobalPos;
@@ -149,6 +151,8 @@ int main(int argc, char *argv[])
     app.setApplicationName("Application Example");
     new DebugCursorFilter(qApp);
     qtdebug_init();
+
+    qd_screen();
 
     MainWindow *mainWin = nullptr;
     if (QApplication::type() != QApplication::GuiServer) {

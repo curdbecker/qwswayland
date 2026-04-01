@@ -5,6 +5,7 @@
 #include "debug.h"
 
 #include <QApplication>
+#include <QDesktopWidget>
 #include <QWidget>
 #include <QList>
 #include <QPoint>
@@ -21,8 +22,8 @@
 
 /* node_pfx: printed before the widget's first line (contains the branch character)
  * body_pfx: printed before each subsequent detail line (aligns with node text) */
-static void dump_widget_info(const QWidget *w, int index,
-                             const char *node_pfx, const char *body_pfx)
+void dump_widget_info(const QWidget *w, int index,
+                      const char *node_pfx, const char *body_pfx)
 {
     QPoint screen = w->mapToGlobal(QPoint(0, 0));
     QRect  geom   = w->geometry();
@@ -108,6 +109,23 @@ void qd_widgets(void)
     Q_FOREACH(QWidget *w, QApplication::topLevelWidgets()) {
         if (index > 0) fprintf(stderr, "\n");
         dump_tree(w, &index, "", true, false);
+    }
+    fprintf(stderr, "======================\n\n");
+}
+
+__attribute__((used, noinline))
+void qd_screen(void)
+{
+    QDesktopWidget *dw = QApplication::desktop();
+    fprintf(stderr, "\n=== Qt screen dump ===\n");
+    fprintf(stderr, "screens: %d\n", dw->screenCount());
+    for (int i = 0; i < dw->screenCount(); i++) {
+        QRect g = dw->screenGeometry(i);
+        QRect a = dw->availableGeometry(i);
+        fprintf(stderr, "  screen %d: geometry=(%d,%d) %dx%d  available=(%d,%d) %dx%d%s\n",
+            i, g.x(), g.y(), g.width(), g.height(),
+            a.x(), a.y(), a.width(), a.height(),
+            dw->primaryScreen() == i ? "  [primary]" : "");
     }
     fprintf(stderr, "======================\n\n");
 }
