@@ -279,9 +279,11 @@ qwslock_t *qwslock_open(int id)
     return lock;
 }
 
-void qwslock_destroy(qwslock_t *lock)
+void qwslock_destroy(qwslock_t *lock, bool force)
 {
     if (!lock) return;
+    if (force)
+        lock->base.owned = true;
     _lock_base_cleanup(&lock->base, false);
     free(lock);
 }

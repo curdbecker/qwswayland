@@ -53,11 +53,12 @@ void qwswl_destroy_client(qwswl_state_t *state, qwswl_client_t *cl)
 
     qwswl_window_stack_t_drop(&cl->window_stack);
 
-    /* Detach from client's lock (we don't own it, client does) */
-    qwslock_destroy(cl->lock);
-    cl->lock = NULL;
-
     close(cl->fd);
+    
+    /* Destroy the client's lock - that should get it to start
+     * getting an idea about what is about to happen */
+    qwslock_destroy(cl->lock, true);
+    
     free(cl);
 }
 

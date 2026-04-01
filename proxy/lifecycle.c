@@ -357,6 +357,33 @@ void qwswl_shutdown(qwswl_state_t *state)
 
     fprintf(stderr, "[qwswayland] Shutting down\n");
 
+    /* Cancel any read operation to prevent a deadlock if we should
+     * have been kicked out of the epoll loop. */
+    if (state->wl_display)
+        wl_display_cancel_read(state->wl_display);
+
+    /* Disconnect all clients */
+    for(c_each_kv(client_id, cl, qwswl_client_map_t, state->client_map)) {
+        qwswl_disconnect_client_no_hashmap(state, *cl);
+    }
+
+    /* Clean up QWS */
+    if (state->qws_server_fd >= 0) {
+        close(state->qws_server_fd);
+        unlink(state->display_paths.socket);
+    }
+
+    qws_shm_destroy(&state->display_shm);
+
+    if (state->display_lock != NULL)
+        qlock_destroy(state->display_lock);
+
+    if (state->qws_epoll_fd >= 0)
+        close(state->qws_epoll_fd);
+    
+    if (state->loop_epoll_fd >= 0)
+        close(state->loop_epoll_fd);
+
     /* Clean up Wayland */
     if (state->wl_pointer)
         wl_pointer_destroy(state->wl_pointer);
@@ -388,28 +415,6 @@ void qwswl_shutdown(qwswl_state_t *state)
         wl_display_flush(state->wl_display);
         wl_display_disconnect(state->wl_display);
     }
-
-    /* Disconnect all clients */
-    for(c_each_kv(client_id, cl, qwswl_client_map_t, state->client_map)) {
-        qwswl_disconnect_client_no_hashmap(state, *cl);
-    }
-
-    /* Clean up QWS */
-    if (state->qws_server_fd >= 0) {
-        close(state->qws_server_fd);
-        unlink(state->display_paths.socket);
-    }
-
-    qws_shm_destroy(&state->display_shm);
-
-    if (state->display_lock != NULL)
-        qlock_destroy(state->display_lock);
-
-    if (state->qws_epoll_fd >= 0)
-        close(state->qws_epoll_fd);
-    
-    if (state->loop_epoll_fd >= 0)
-        close(state->loop_epoll_fd);
 
     state->running = false;
 }

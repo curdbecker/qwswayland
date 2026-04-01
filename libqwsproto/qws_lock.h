@@ -78,8 +78,10 @@ qwslock_t  *qwslock_create(void);
 qwslock_t  *qwslock_open(int id);
 
 /* Destroy / detach the lock. If owned, removes the semaphores.
- * Also frees the allocation. NULL-safe. */
-void qwslock_destroy(qwslock_t *lock);
+ * Also frees the allocation. NULL-safe.
+ * Force also destroys a lock if it has been not created by
+ * the current process and is not owned by it. */
+void qwslock_destroy(qwslock_t *lock, bool force);
 
 /* Get the ID to send to the client (for the Connected event or
  * IdentifyCommand). */
