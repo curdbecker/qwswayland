@@ -349,7 +349,6 @@ bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win,
         };
         qwswl_update_surface(state, win, &full_window, 1);
     }
-
     return true;
 }
 
@@ -603,6 +602,12 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
 
     /* Release the permanently-attached client shm */
     qws_shm_detach(&win->client_shm.shm);
+
+    /* Null out any dangling seat references to this window. */
+    if (state->pointer_state.win == win)
+        state->pointer_state.win = NULL;
+    if (state->kbd_state.win == win)
+        state->kbd_state.win = NULL;
 
     /* mark the window as unused */
     qwswl_remove_window_from_client(win->client, win->qws_id);
