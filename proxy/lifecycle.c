@@ -15,7 +15,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <time.h>
 #include <sys/epoll.h>
+#include <sys/timerfd.h>
 
 #include "xdg-output-unstable-v1-client-protocol.h"
 
@@ -337,6 +339,13 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
         return -1;
     }
 
+    state->kbd_state.repeat_timerfd = timerfd_create(CLOCK_MONOTONIC,
+                                                     TFD_NONBLOCK | TFD_CLOEXEC);
+    if (state->kbd_state.repeat_timerfd < 0) {
+        perror("[qwswayland] timerfd_create repeat");
+        return -1;
+    }
+
     fprintf(stderr, "[qwswayland] Initialized: %dbpp\n", depth);
     qwswl_debug_init(state);
     return 0;
@@ -466,7 +475,7 @@ void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl) {
 
 int qwswl_run(qwswl_state_t *state)
 {
-    struct epoll_event loop_events[3];
+    struct epoll_event loop_events[4];
     struct epoll_event qws_events[32];
     int wl_fd;
     
@@ -494,8 +503,16 @@ int qwswl_run(qwswl_state_t *state)
     /* Watch qws client epoll fd for events */ {
         struct epoll_event ev = { .events = EPOLLIN,
                                    .data.fd = state->qws_epoll_fd};
-        epoll_ctl(state->loop_epoll_fd, EPOLL_CTL_ADD, 
+        epoll_ctl(state->loop_epoll_fd, EPOLL_CTL_ADD,
             state->qws_epoll_fd, &ev);
+    }
+
+    /* Watch key-repeat timerfd */
+    {
+        struct epoll_event ev = { .events = EPOLLIN,
+                                   .data.fd = state->kbd_state.repeat_timerfd };
+        epoll_ctl(state->loop_epoll_fd, EPOLL_CTL_ADD,
+            state->kbd_state.repeat_timerfd, &ev);
     }
 
     fprintf(stderr, "[qwswayland] Entering main loop\n");
@@ -550,6 +567,9 @@ int qwswl_run(qwswl_state_t *state)
                 } else if (loop_events[i].data.fd == state->qws_epoll_fd) {
                     /* QWS events */
                     had_qws = true;
+                } else if (loop_events[i].data.fd == state->kbd_state.repeat_timerfd) {
+                    /* Key repeat tick */
+                    qwswl_keyboard_repeat_tick(state);
                 }
             }
         }
