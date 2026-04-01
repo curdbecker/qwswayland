@@ -7,16 +7,16 @@
 
 #include "qws_lock.h"
 
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
-#include <sys/types.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #ifdef QWS_IPC_POSIX
 #include <semaphore.h>
@@ -29,7 +29,7 @@
 #endif
 
 #define LOCK_NUM_SEMS 3
-#define QLOCK_MAX_LOCKS 200   /* initial value of QLock counter semaphore */
+#define QLOCK_MAX_LOCKS 200 /* initial value of QLock counter semaphore */
 
 /* ================================================================
  * Private struct definitions
@@ -37,26 +37,26 @@
 
 /* Shared base — embedded as the first member of both lock structs. */
 struct lock_base {
-    bool  owned;
-    int   posix_id;                    /* QWSLock numeric wire id */
+    bool owned;
+    int posix_id; /* QWSLock numeric wire id */
 #ifdef QWS_IPC_POSIX
     sem_t *posix_sems[LOCK_NUM_SEMS];
-    char   posix_prefix[PATH_MAX];     /* "/qwslock_<hex>_" or "<filename><id>" */
+    char posix_prefix[PATH_MAX]; /* "/qwslock_<hex>_" or "<filename><id>" */
 #else
-    int    sysv_semid;
+    int sysv_semid;
 #endif
 };
 
 /* QWSLock: per-client 3-semaphore lock with nestable acquire. */
 struct qws_lock {
     struct lock_base base;
-    int   lock_count[LOCK_NUM_SEMS];
+    int lock_count[LOCK_NUM_SEMS];
 };
 
 /* QLock: reader-writer lock identified by (filename, id). */
 struct q_lock {
     struct lock_base base;
-    char  id;    /* differentiator character (also useful for debug) */
+    char id; /* differentiator character (also useful for debug) */
 };
 
 /* ================================================================
@@ -67,9 +67,9 @@ struct q_lock {
 /* union semun is defined by including <sys/sem.h> */
 #else
 union semun {
-    int              val;
+    int val;
     struct semid_ds *buf;
-    unsigned short  *array;
+    unsigned short *array;
 };
 #endif
 
@@ -79,8 +79,7 @@ union semun {
 
 #ifdef QWS_IPC_POSIX
 
-static int posix_sem_wait_eintr(sem_t *sem)
-{
+static int posix_sem_wait_eintr(sem_t *sem) {
     int ret;
     do {
         ret = sem_wait(sem);
@@ -90,8 +89,7 @@ static int posix_sem_wait_eintr(sem_t *sem)
 
 #else
 
-static int sysv_semop_eintr(int semid, struct sembuf *sops, size_t nsops)
-{
+static int sysv_semop_eintr(int semid, struct sembuf *sops, size_t nsops) {
     int ret;
     do {
         ret = semop(semid, sops, nsops);
@@ -106,19 +104,18 @@ static int sysv_semop_eintr(int semid, struct sembuf *sops, size_t nsops)
  * ================================================================ */
 
 /* BackingStore=1, Communication=1, RegionEvent=0 */
-static const unsigned short qwslock_init_vals[LOCK_NUM_SEMS] = { 1, 1, 0 };
+static const unsigned short qwslock_init_vals[LOCK_NUM_SEMS] = {1, 1, 0};
 
 /* QLock: c=MAX_LOCKS, r=1, w=1 */
-static const unsigned short qlock_init_vals[3] = { QLOCK_MAX_LOCKS, 1, 1 };
+static const unsigned short qlock_init_vals[3] = {QLOCK_MAX_LOCKS, 1, 1};
 
 /* ================================================================
  * Internal helpers
  * ================================================================ */
 
 /* Initialise base fields after malloc+memset. */
-static void _lock_base_init(struct lock_base *base, bool owned)
-{
-    base->owned    = owned;
+static void _lock_base_init(struct lock_base *base, bool owned) {
+    base->owned = owned;
     base->posix_id = 0;
 #ifdef QWS_IPC_POSIX
     for (int i = 0; i < LOCK_NUM_SEMS; i++)
@@ -131,8 +128,7 @@ static void _lock_base_init(struct lock_base *base, bool owned)
 #ifndef QWS_IPC_POSIX
 
 static int _sysv_create(struct lock_base *base, key_t key, int n_sems,
-                         const unsigned short *init_vals)
-{
+                        const unsigned short *init_vals) {
     int semid = semget(key, n_sems, IPC_CREAT | 0666);
     if (semid == -1) {
         perror("qws_lock: semget");
@@ -162,21 +158,21 @@ static const char *qwslock_posix_suffixes[LOCK_NUM_SEMS] = {
 /* Generate the full per-sem POSIX name from the stored prefix.
  * QWSLock (qlock=false): "/qwslock_<hex>_BackingStore" etc.
  * QLock   (qlock=true):  "<filename><id>c" / "...r" / "...w" */
-static void _posix_name(const struct lock_base *base, int idx,
-                         char *buf, size_t buflen, bool qlock)
-{
+static void _posix_name(const struct lock_base *base, int idx, char *buf,
+                        size_t buflen, bool qlock) {
     if (qlock)
         snprintf(buf, buflen, "%s%c", base->posix_prefix, "crw"[idx]);
     else
-        snprintf(buf, buflen, "%s%s", base->posix_prefix, qwslock_posix_suffixes[idx]);
+        snprintf(buf, buflen, "%s%s", base->posix_prefix,
+                 qwslock_posix_suffixes[idx]);
 }
 
 /* Open or create n POSIX semaphores for base.
  * On failure: closes/unlinks already-opened sems (0..i-1), returns -1.
  * Caller is responsible for freeing the containing struct. */
 static int _posix_sems(struct lock_base *base, int n,
-                        const unsigned short *init_vals, bool create, bool qlock)
-{
+                       const unsigned short *init_vals, bool create,
+                       bool qlock) {
     char name[PATH_MAX];
     for (int i = 0; i < n; i++) {
         _posix_name(base, i, name, sizeof(name), qlock);
@@ -211,10 +207,9 @@ static int _posix_sems(struct lock_base *base, int n,
 #endif /* QWS_IPC_POSIX */
 
 /* Shared IPC cleanup for both destroy functions. */
-static void _lock_base_cleanup(struct lock_base *base, bool qlock)
-{
+static void _lock_base_cleanup(struct lock_base *base, bool qlock) {
 #ifndef QWS_IPC_POSIX
-    (void) qlock;
+    (void)qlock;
     if (base->owned && base->sysv_semid >= 0)
         semctl(base->sysv_semid, 0, IPC_RMID);
 #else
@@ -235,23 +230,26 @@ static void _lock_base_cleanup(struct lock_base *base, bool qlock)
  * QWSLock: create / open / destroy / id
  * ################################################################ */
 
-qwslock_t *qwslock_create(void)
-{
+qwslock_t *qwslock_create(void) {
     qwslock_t *lock = malloc(sizeof(struct qws_lock));
-    if (!lock) return NULL;
+    if (!lock)
+        return NULL;
     memset(lock, 0, sizeof(struct qws_lock));
     _lock_base_init(&lock->base, true);
 
 #ifndef QWS_IPC_POSIX
-    if (_sysv_create(&lock->base, IPC_PRIVATE, LOCK_NUM_SEMS, qwslock_init_vals) != 0) {
+    if (_sysv_create(&lock->base, IPC_PRIVATE, LOCK_NUM_SEMS,
+                     qwslock_init_vals) != 0) {
         free(lock);
         return NULL;
     }
 #else
     static int posix_counter = 0;
     lock->base.posix_id = (getpid() << 8) | (posix_counter++ & 0xFF);
-    snprintf(lock->base.posix_prefix, PATH_MAX, "/qwslock_%x_", lock->base.posix_id);
-    if (_posix_sems(&lock->base, LOCK_NUM_SEMS, qwslock_init_vals, true, false) != 0) {
+    snprintf(lock->base.posix_prefix, PATH_MAX, "/qwslock_%x_",
+             lock->base.posix_id);
+    if (_posix_sems(&lock->base, LOCK_NUM_SEMS, qwslock_init_vals, true,
+                    false) != 0) {
         free(lock);
         return NULL;
     }
@@ -259,10 +257,10 @@ qwslock_t *qwslock_create(void)
     return lock;
 }
 
-qwslock_t *qwslock_open(int id)
-{
+qwslock_t *qwslock_open(int id) {
     qwslock_t *lock = malloc(sizeof(struct qws_lock));
-    if (!lock) return NULL;
+    if (!lock)
+        return NULL;
     memset(lock, 0, sizeof(struct qws_lock));
     _lock_base_init(&lock->base, false);
 
@@ -271,7 +269,8 @@ qwslock_t *qwslock_open(int id)
 #else
     lock->base.posix_id = id;
     snprintf(lock->base.posix_prefix, PATH_MAX, "/qwslock_%x_", id);
-    if (_posix_sems(&lock->base, LOCK_NUM_SEMS, qwslock_init_vals, false, false) != 0) {
+    if (_posix_sems(&lock->base, LOCK_NUM_SEMS, qwslock_init_vals, false,
+                    false) != 0) {
         free(lock);
         return NULL;
     }
@@ -279,17 +278,16 @@ qwslock_t *qwslock_open(int id)
     return lock;
 }
 
-void qwslock_destroy(qwslock_t *lock, bool force)
-{
-    if (!lock) return;
+void qwslock_destroy(qwslock_t *lock, bool force) {
+    if (!lock)
+        return;
     if (force)
         lock->base.owned = true;
     _lock_base_cleanup(&lock->base, false);
     free(lock);
 }
 
-int qwslock_id(const qwslock_t *lock)
-{
+int qwslock_id(const qwslock_t *lock) {
 #ifndef QWS_IPC_POSIX
     return lock->base.sysv_semid;
 #else
@@ -301,8 +299,7 @@ int qwslock_id(const qwslock_t *lock)
  * QWSLock: lock / unlock / wait / get_value
  * ################################################################ */
 
-int qwslock_lock(qwslock_t *lock, qwslock_type_t which)
-{
+int qwslock_lock(qwslock_t *lock, qwslock_type_t which) {
     if (which < 0 || which >= LOCK_NUM_SEMS)
         return -1;
 
@@ -317,15 +314,12 @@ int qwslock_lock(qwslock_t *lock, qwslock_type_t which)
     int ret;
 #ifndef QWS_IPC_POSIX
 
-    struct sembuf op = { 
-        .sem_num = (unsigned short)which, 
-        .sem_op = -1, 
-        .sem_flg = 0
-    };
+    struct sembuf op = {
+        .sem_num = (unsigned short)which, .sem_op = -1, .sem_flg = 0};
 
     if (which == QWS_LOCK_BACKINGSTORE)
         op.sem_flg |= SEM_UNDO;
-    
+
     ret = sysv_semop_eintr(lock->base.sysv_semid, &op, 1);
 #else
     if (lock->base.posix_sems[which] == SEM_FAILED)
@@ -339,8 +333,7 @@ int qwslock_lock(qwslock_t *lock, qwslock_type_t which)
     return ret;
 }
 
-int qwslock_unlock(qwslock_t *lock, qwslock_type_t which)
-{
+int qwslock_unlock(qwslock_t *lock, qwslock_type_t which) {
     if (which < 0 || which >= LOCK_NUM_SEMS)
         return -1;
 
@@ -356,10 +349,7 @@ int qwslock_unlock(qwslock_t *lock, qwslock_type_t which)
 #ifndef QWS_IPC_POSIX
 
     struct sembuf op = {
-        .sem_num = (unsigned short)which,
-        .sem_op = 1, 
-        .sem_flg = 0
-    };
+        .sem_num = (unsigned short)which, .sem_op = 1, .sem_flg = 0};
 
     if (which == QWS_LOCK_BACKINGSTORE)
         op.sem_flg |= SEM_UNDO;
@@ -372,13 +362,11 @@ int qwslock_unlock(qwslock_t *lock, qwslock_type_t which)
 #endif
 }
 
-int qwslock_wait(qwslock_t *lock, qwslock_type_t which)
-{
+int qwslock_wait(qwslock_t *lock, qwslock_type_t which) {
     return qwslock_lock(lock, which);
 }
 
-int qwslock_get_value(const qwslock_t *lock, qwslock_type_t which)
-{
+int qwslock_get_value(const qwslock_t *lock, qwslock_type_t which) {
     if (which < 0 || which >= LOCK_NUM_SEMS)
         return -1;
 #ifndef QWS_IPC_POSIX
@@ -397,10 +385,10 @@ int qwslock_get_value(const qwslock_t *lock, qwslock_type_t which)
  * QLock: create / open / destroy
  * ################################################################ */
 
-qlock_t *qlock_create(const char *filename, char id)
-{
+qlock_t *qlock_create(const char *filename, char id) {
     qlock_t *lock = malloc(sizeof(struct q_lock));
-    if (!lock) return NULL;
+    if (!lock)
+        return NULL;
     memset(lock, 0, sizeof(struct q_lock));
     _lock_base_init(&lock->base, true);
     lock->id = id;
@@ -426,10 +414,10 @@ qlock_t *qlock_create(const char *filename, char id)
     return lock;
 }
 
-qlock_t *qlock_open(const char *filename, char id)
-{
+qlock_t *qlock_open(const char *filename, char id) {
     qlock_t *lock = malloc(sizeof(struct q_lock));
-    if (!lock) return NULL;
+    if (!lock)
+        return NULL;
     memset(lock, 0, sizeof(struct q_lock));
     _lock_base_init(&lock->base, false);
     lock->id = id;
@@ -457,9 +445,9 @@ qlock_t *qlock_open(const char *filename, char id)
     return lock;
 }
 
-void qlock_destroy(qlock_t *lock)
-{
-    if (!lock) return;
+void qlock_destroy(qlock_t *lock) {
+    if (!lock)
+        return;
     _lock_base_cleanup(&lock->base, true);
     free(lock);
 }
@@ -472,27 +460,32 @@ void qlock_destroy(qlock_t *lock)
  *             wsem (write mutex, init 1).
  * ################################################################ */
 
-int qlock_lock(qlock_t *lock, qlock_type_t type)
-{
+int qlock_lock(qlock_t *lock, qlock_type_t type) {
 #ifndef QWS_IPC_POSIX
     short op_val = (type == QWS_QLOCK_WRITE) ? -(short)QLOCK_MAX_LOCKS : -1;
-    struct sembuf op = { .sem_num = 0, .sem_op = op_val, .sem_flg = 0 };
+    struct sembuf op = {.sem_num = 0, .sem_op = op_val, .sem_flg = 0};
     return sysv_semop_eintr(lock->base.sysv_semid, &op, 1);
 #else
-    sem_t *c    = lock->base.posix_sems[0]; /* counter */
+    sem_t *c = lock->base.posix_sems[0];    /* counter */
     sem_t *rsem = lock->base.posix_sems[1]; /* read gate */
     sem_t *wsem = lock->base.posix_sems[2]; /* write mutex */
 
     if (type == QWS_QLOCK_WRITE) {
-        if (posix_sem_wait_eintr(rsem) == -1) return -1;
-        if (posix_sem_wait_eintr(wsem) == -1) { sem_post(rsem); return -1; }
+        if (posix_sem_wait_eintr(rsem) == -1)
+            return -1;
+        if (posix_sem_wait_eintr(wsem) == -1) {
+            sem_post(rsem);
+            return -1;
+        }
     } else {
-        if (posix_sem_wait_eintr(wsem) == -1) return -1;
-        sem_trywait(rsem);   /* mark "readers active"; EAGAIN is fine */
+        if (posix_sem_wait_eintr(wsem) == -1)
+            return -1;
+        sem_trywait(rsem); /* mark "readers active"; EAGAIN is fine */
         if (posix_sem_wait_eintr(c) == -1) {
             int v = 0;
             sem_getvalue(c, &v);
-            if (v == QLOCK_MAX_LOCKS) sem_post(rsem);
+            if (v == QLOCK_MAX_LOCKS)
+                sem_post(rsem);
             sem_post(wsem);
             return -1;
         }
@@ -502,14 +495,13 @@ int qlock_lock(qlock_t *lock, qlock_type_t type)
 #endif
 }
 
-int qlock_unlock(qlock_t *lock, qlock_type_t type)
-{
+int qlock_unlock(qlock_t *lock, qlock_type_t type) {
 #ifndef QWS_IPC_POSIX
     short op_val = (type == QWS_QLOCK_WRITE) ? (short)QLOCK_MAX_LOCKS : 1;
-    struct sembuf op = { .sem_num = 0, .sem_op = op_val, .sem_flg = 0 };
+    struct sembuf op = {.sem_num = 0, .sem_op = op_val, .sem_flg = 0};
     return sysv_semop_eintr(lock->base.sysv_semid, &op, 1);
 #else
-    sem_t *c    = lock->base.posix_sems[0];
+    sem_t *c = lock->base.posix_sems[0];
     sem_t *rsem = lock->base.posix_sems[1];
     sem_t *wsem = lock->base.posix_sems[2];
 
@@ -517,11 +509,13 @@ int qlock_unlock(qlock_t *lock, qlock_type_t type)
         sem_post(wsem);
         return sem_post(rsem);
     } else {
-        if (posix_sem_wait_eintr(wsem) == -1) return -1;
+        if (posix_sem_wait_eintr(wsem) == -1)
+            return -1;
         sem_post(c);
         int v = 0;
         sem_getvalue(c, &v);
-        if (v == QLOCK_MAX_LOCKS) sem_post(rsem);
+        if (v == QLOCK_MAX_LOCKS)
+            sem_post(rsem);
         return sem_post(wsem);
     }
 #endif

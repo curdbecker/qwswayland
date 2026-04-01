@@ -7,23 +7,24 @@
 
 #include "debug.h"
 #include "client.h"
-#include "window.h"
 #include "qws_proto.h"
 #include "qws_trace.h"
+#include "window.h"
 
-#include <stdio.h>
 #include <signal.h>
+#include <stdio.h>
 
-/* Re-use the already-instantiated STC container code from lifecycle.c / client.c */
-#define T qwswl_client_map_t, int32_t, qwswl_client_t*
+/* Re-use the already-instantiated STC container code from lifecycle.c /
+ * client.c */
+#define T qwswl_client_map_t, int32_t, qwswl_client_t *
 #define i_declared
 #include "stc/hashmap.h"
 
-#define T qwswl_window_map_t, int32_t, qwswl_window_t*
+#define T qwswl_window_map_t, int32_t, qwswl_window_t *
 #define i_declared
 #include "stc/hashmap.h"
 
-#define T qwswl_window_stack_t, qwswl_window_t*
+#define T qwswl_window_stack_t, qwswl_window_t *
 #define i_declared
 #include "stc/list.h"
 
@@ -33,16 +34,14 @@
 
 static qwswl_state_t *g_debug_state;
 
-static void sigusr1_handler(int sig)
-{
+static void sigusr1_handler(int sig) {
     (void)sig;
     qd_all();
 }
 
-void qwswl_debug_init(qwswl_state_t *state)
-{
+void qwswl_debug_init(qwswl_state_t *state) {
     g_debug_state = state;
-    struct sigaction sa = { .sa_handler = sigusr1_handler };
+    struct sigaction sa = {.sa_handler = sigusr1_handler};
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = SA_RESTART;
     sigaction(SIGUSR1, &sa, NULL);
@@ -52,8 +51,7 @@ void qwswl_debug_init(qwswl_state_t *state)
  * Window dump
  * ================================================================ */
 
-static void dump_window(const qwswl_window_t *win, int index)
-{
+static void dump_window(const qwswl_window_t *win, int index) {
     if (win->win_flags == -1)
         return;
 
@@ -67,19 +65,17 @@ static void dump_window(const qwswl_window_t *win, int index)
             "       client_shm: fmt=%s(%d)\n"
             "       server_shm: fd=%-3d  sz=%zu\n"
             "       wl_surface=%s  wl_subsurface=%s  parent=%s\n",
-            index, win->qws_id,
-            win->xdg_toplevel ? "toplevel" : "child",
-            win->name    ? win->name    : "",
-            win->caption ? win->caption : "",
+            index, win->qws_id, win->xdg_toplevel ? "toplevel" : "child",
+            win->name ? win->name : "", win->caption ? win->caption : "",
             (unsigned)win->win_flags,
             win->win_flags != (qws_window_flags_t)-1
-                ? qws_window_type_str((uint32_t)win->win_flags) : "?",
+                ? qws_window_type_str((uint32_t)win->win_flags)
+                : "?",
             g->x, g->y, g->width, g->height,
-            qws_image_format_name(win->client_shm.format), win->client_shm.format,
-            win->server_shm.fd, win->server_shm.size,
-            win->wl_surface    ? "yes" : "no",
-            win->wl_subsurface ? "yes" : "no",
-            win->parent        ? "yes" : "no");
+            qws_image_format_name(win->client_shm.format),
+            win->client_shm.format, win->server_shm.fd, win->server_shm.size,
+            win->wl_surface ? "yes" : "no", win->wl_subsurface ? "yes" : "no",
+            win->parent ? "yes" : "no");
 
     if (win->parent)
         fprintf(stderr, "       parent qws_id=%d\n", win->parent->qws_id);
@@ -96,11 +92,9 @@ static void dump_window(const qwswl_window_t *win, int index)
  * Client dump
  * ================================================================ */
 
-static void dump_client(const qwswl_client_t *client)
-{
-    fprintf(stderr, "client %d  fd=%d  windows=%td\n",
-            client->client_id, client->fd,
-            qwswl_window_stack_t_count(&client->window_stack));
+static void dump_client(const qwswl_client_t *client) {
+    fprintf(stderr, "client %d  fd=%d  windows=%td\n", client->client_id,
+            client->fd, qwswl_window_stack_t_count(&client->window_stack));
     int i = 0;
     for (c_each(it, qwswl_window_stack_t, client->window_stack))
         dump_window(*it.ref, i++);
@@ -108,13 +102,11 @@ static void dump_client(const qwswl_client_t *client)
 
 /* ================================================================
  * Public API — __attribute__((used, noinline)) ensures GDB can call
- * these reliably even at -O2 (they will not be optimised away or
+ * these reliably even at -O2 (they will not be optimized away or
  * inlined into callers that never reach them).
  * ================================================================ */
 
-__attribute__((used, noinline))
-void qd_all(void)
-{
+__attribute__((used, noinline)) void qd_all(void) {
     if (!g_debug_state) {
         fprintf(stderr, "qd: not initialised\n");
         return;
@@ -126,9 +118,7 @@ void qd_all(void)
     fprintf(stderr, "==========================================\n\n");
 }
 
-__attribute__((used, noinline))
-void qd_client(int client_id)
-{
+__attribute__((used, noinline)) void qd_client(int client_id) {
     if (!g_debug_state) {
         fprintf(stderr, "qd: not initialised\n");
         return;
@@ -142,9 +132,7 @@ void qd_client(int client_id)
     dump_client(it.ref->second);
 }
 
-__attribute__((used, noinline))
-void qd_win(int32_t qws_id)
-{
+__attribute__((used, noinline)) void qd_win(int32_t qws_id) {
     if (!g_debug_state) {
         fprintf(stderr, "qd: not initialised\n");
         return;

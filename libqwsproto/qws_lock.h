@@ -25,8 +25,8 @@
 #ifndef QWS_LOCK_H
 #define QWS_LOCK_H
 
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 #include "qws_proto.h"
 
@@ -40,9 +40,9 @@ extern "C" {
 
 /* Semaphore indices — must match Qt 4.8 QWSLock::LockType */
 typedef enum {
-    QWS_LOCK_BACKINGSTORE  = 0,
+    QWS_LOCK_BACKINGSTORE = 0,
     QWS_LOCK_COMMUNICATION = 1,
-    QWS_LOCK_REGIONEVENT   = 2,
+    QWS_LOCK_REGIONEVENT = 2,
 } qwslock_type_t;
 
 /* ================================================================
@@ -51,16 +51,16 @@ typedef enum {
 
 /* Mirrors Qt 4.8 QLock::Type */
 typedef enum {
-    QWS_QLOCK_READ  = 0,   /* shared read lock  */
-    QWS_QLOCK_WRITE = 1,   /* exclusive write lock */
+    QWS_QLOCK_READ = 0,  /* shared read lock  */
+    QWS_QLOCK_WRITE = 1, /* exclusive write lock */
 } qlock_type_t;
 
 /* ================================================================
  * Opaque handle types (struct definitions live in qws_lock.c)
  * ================================================================ */
 
-typedef struct qws_lock qwslock_t;   /* QWSLock opaque handle */
-typedef struct q_lock   qlock_t;     /* QLock opaque handle */
+typedef struct qws_lock qwslock_t; /* QWSLock opaque handle */
+typedef struct q_lock qlock_t;     /* QLock opaque handle */
 
 /* ================================================================
  * QWSLock API
@@ -69,13 +69,13 @@ typedef struct q_lock   qlock_t;     /* QLock opaque handle */
 /* Create a new QWSLock (server-side). Allocates the semaphores.
  * Returns pointer on success, NULL on failure.
  * Use qwslock_id() to get the id to send to the client. */
-qwslock_t  *qwslock_create(void);
+qwslock_t *qwslock_create(void);
 
 /* Attach to an existing QWSLock by ID (client-side).
  * For SysV, id is the semaphore set id.
  * For POSIX, id is the numeric identifier used in the sem names.
  * Returns pointer on success, NULL on failure. */
-qwslock_t  *qwslock_open(int id);
+qwslock_t *qwslock_open(int id);
 
 /* Destroy / detach the lock. If owned, removes the semaphores.
  * Also frees the allocation. NULL-safe.
@@ -85,21 +85,22 @@ void qwslock_destroy(qwslock_t *lock, bool force);
 
 /* Get the ID to send to the client (for the Connected event or
  * IdentifyCommand). */
-int  qwslock_id(const qwslock_t *lock);
+int qwslock_id(const qwslock_t *lock);
 
 /* Lock operations (sem_down). Blocks if already locked.
- * `which`: QWS_LOCK_BACKINGSTORE, QWS_LOCK_COMMUNICATION, or QWS_LOCK_REGIONEVENT */
-int  qwslock_lock(qwslock_t *lock, qwslock_type_t which);
+ * `which`: QWS_LOCK_BACKINGSTORE, QWS_LOCK_COMMUNICATION, or
+ * QWS_LOCK_REGIONEVENT */
+int qwslock_lock(qwslock_t *lock, qwslock_type_t which);
 
 /* Unlock (sem_up). */
-int  qwslock_unlock(qwslock_t *lock, qwslock_type_t which);
+int qwslock_unlock(qwslock_t *lock, qwslock_type_t which);
 
 /* Wait for a semaphore to become non-zero (used for RegionEvent).
  * This is a blocking wait + immediate re-lock pattern. */
-int  qwslock_wait(qwslock_t *lock, qwslock_type_t which);
+int qwslock_wait(qwslock_t *lock, qwslock_type_t which);
 
 /* Query current value of a semaphore. Returns value or -1 on error. */
-int  qwslock_get_value(const qwslock_t *lock, qwslock_type_t which);
+int qwslock_get_value(const qwslock_t *lock, qwslock_type_t which);
 
 /* ================================================================
  * QLock API
@@ -120,8 +121,8 @@ void qlock_destroy(qlock_t *lock);
 
 /* Lock/unlock with Read or Write type (type = qlock_type_t).
  * Read = shared; Write = exclusive. */
-int  qlock_lock(qlock_t *lock, qlock_type_t type);
-int  qlock_unlock(qlock_t *lock, qlock_type_t type);
+int qlock_lock(qlock_t *lock, qlock_type_t type);
+int qlock_unlock(qlock_t *lock, qlock_type_t type);
 
 #ifdef __cplusplus
 }

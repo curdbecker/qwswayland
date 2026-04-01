@@ -5,32 +5,30 @@
 
 #include "proxy.h"
 #include "client.h"
-#include "window.h"
 #include "qws_event_factory.h"
-#include "qws_unicode.h"
 #include "qws_trace.h"
+#include "qws_unicode.h"
+#include "window.h"
 
+#include <errno.h>
+#include <fcntl.h>
+#include <poll.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
-#include <errno.h>
-#include <signal.h>
-#include <poll.h>
 #include <sys/epoll.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
-#include <fcntl.h>
+#include <unistd.h>
 
 #include <assert.h>
-
 
 /* ================================================================
  * Command dispatch
  * ================================================================ */
 
-void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *cl)
-{
+void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *cl) {
     uint8_t buf[4096];
 
     ssize_t n = read(cl->fd, buf, sizeof(buf));
@@ -45,11 +43,10 @@ void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *cl)
     size_t offset = 0;
     while (offset < (size_t)n) {
         qws_packet_t *pkt = NULL;
-        size_t consumed = qws_reader_feed(&cl->reader,
-                                            buf + offset,
-                                            (size_t)n - offset,
-                                            &pkt);
-        if (consumed == 0) break;
+        size_t consumed = qws_reader_feed(&cl->reader, buf + offset,
+                                          (size_t)n - offset, &pkt);
+        if (consumed == 0)
+            break;
         offset += consumed;
 
         if (pkt) {
@@ -60,8 +57,7 @@ void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *cl)
     }
 }
 
-static void create_ids(qwswl_client_t *cl, int32_t count)
-{
+static void create_ids(qwswl_client_t *cl, int32_t count) {
     int32_t first_id = qwswl_allocate_ids(cl, count);
 
     qws_packet_t *evt = qws_make_creation_event(first_id, count);
@@ -70,8 +66,7 @@ static void create_ids(qwswl_client_t *cl, int32_t count)
 }
 
 static void send_region_event(qwswl_client_t *cl, qwswl_window_t *win,
-                               qws_rect_t *rects, int32_t nrects)
-{
+                              qws_rect_t *rects, int32_t nrects) {
     qws_packet_t *evt = qws_make_region_event(win->qws_id, 0, rects, nrects);
     qws_trace_packet(cl->client_id, evt, true);
     qws_write_packet(cl->fd, evt);
@@ -83,45 +78,40 @@ static void send_region_event(qwswl_client_t *cl, qwswl_window_t *win,
  * This is a rather convenient hack to force the QWS client to request
  * a window repaint from us.
  *
- * Like for a region command, a region event without rects is 
+ * Like for a region command, a region event without rects is
  * interpreted as the surface currently not being visible anymore, e.g.
  * due to being obscured by another window.
  *
  * If we then immediately follow this by a region event with the
  * expected rects of a window, the client then assumes that the server
- * might does not have an up-to-date surface content of the window 
- * anymore and therefore requests an explicit repaint of the window 
+ * might does not have an up-to-date surface content of the window
+ * anymore and therefore requests an explicit repaint of the window
  * immediately.
  */
-__attribute__((unused))
-static void force_window_repaint(qwswl_window_t *win)
-{
+__attribute__((unused)) static void force_window_repaint(qwswl_window_t *win) {
     assert(win);
     qwswl_client_t *cl = win->client;
     send_region_event(cl, win, NULL, 0);
     send_region_event(cl, win, win->geometry.rects, win->geometry.nrects);
 };
 
-static void send_max_region_event(qwswl_state_t *state, qwswl_client_t *cl)
-{
+static void send_max_region_event(qwswl_state_t *state, qwswl_client_t *cl) {
     /* Report a somewhat smaller screen size, so that a window does not
      * try to be larger than the actually available screen size which
      * might contain a task bar or other shell elements.
-     * 
+     *
      * And apparently the window id does not matter at all.... It is
      * at all only meant to find the correct screen, but well I doubt
      * we ever have more than one screen that Qt should know about, so
      * any id is apparently fine. */
     qws_packet_t *evt = qws_make_max_window_rect_event(
-        1, 0, 0, state->screen_width - 100, state->screen_height - 100
-    );
+        1, 0, 0, state->screen_width - 100, state->screen_height - 100);
     qws_trace_packet(cl->client_id, evt, true);
     qws_write_packet(cl->fd, evt);
 }
 
 void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
-                             qws_packet_t *incoming_pkt)
-{
+                            qws_packet_t *incoming_pkt) {
     assert(incoming_pkt);
     int32_t type = incoming_pkt->header.type;
 
@@ -132,39 +122,45 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * Contains the app name and the client's lock semaphore ID.
          * We need to attach to the client's lock so we can synchronize
          * Communication and RegionEvent signaling. */
-        qws_cmd_identify_t *cmd = (qws_cmd_identify_t *)incoming_pkt->simple_data;
- 
+        qws_cmd_identify_t *cmd =
+            (qws_cmd_identify_t *)incoming_pkt->simple_data;
+
         /* Lock ID is in simpleData.id_lock */
         int32_t lock_id = cmd->id_lock;
- 
+
         if (lock_id >= 0) {
             cl->lock = qwslock_open(lock_id);
             if (cl->lock) {
-                fprintf(stderr, "[qwswayland] Client %d: attached to lock id=%d\n",
+                fprintf(stderr,
+                        "[qwswayland] Client %d: attached to lock id=%d\n",
                         cl->client_id, lock_id);
             } else {
-                fprintf(stderr, "[qwswayland] Client %d: FAILED to attach lock id=%d\n",
+                fprintf(stderr,
+                        "[qwswayland] Client %d: FAILED to attach lock id=%d\n",
                         cl->client_id, lock_id);
             }
         } else {
-            fprintf(stderr, "[qwswayland] Client %d: error no lock id in Identify\n", cl->client_id);
+            fprintf(stderr,
+                    "[qwswayland] Client %d: error no lock id in Identify\n",
+                    cl->client_id);
         }
 
         /* Send Connected event */
         char display_spec[128];
-        snprintf(display_spec, sizeof(display_spec), "vnc:size=%dx%d:depth=%d:%d", 
-            state->screen_width, state->screen_height, state->screen_depth, state->qws_display);
+        snprintf(display_spec, sizeof(display_spec),
+                 "vnc:size=%dx%d:depth=%d:%d", state->screen_width,
+                 state->screen_height, state->screen_depth, state->qws_display);
         qws_packet_t *conn = qws_make_connected_event(
             cl->client_id, state->display_shm.shm_id, display_spec);
         qws_trace_packet(cl->client_id, conn, true);
         qws_write_packet(cl->fd, conn);
 
         /*
-        * The client blocks in waitForCreation() after connecting and
-        * will not proceed until it receives a Creation event. The server
-        * must proactively provide IDs — the client does not send a
-        * Create command first. In general, there seem to be 30 resources
-        * to be created by default - no idea why. */
+         * The client blocks in waitForCreation() after connecting and
+         * will not proceed until it receives a Creation event. The server
+         * must proactively provide IDs — the client does not send a
+         * Create command first. In general, there seem to be 30 resources
+         * to be created by default - no idea why. */
         create_ids(cl, 30);
 
         /* Send a single region event that will be valid for all windows
@@ -197,24 +193,29 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         /* Extract raw data */
         int32_t nrects = cmd->nrectangles;
         qws_rect_t *rects = (qws_rect_t *)incoming_pkt->raw_data;
-        char * surface_key;
-        uint8_t *surface_data = 
-            &((uint8_t *) incoming_pkt->raw_data)[
-                cmd->nrectangles * sizeof(qws_rect_t) + cmd->surfacekeylength * 2
-            ];
+        char *surface_key;
+        uint8_t *surface_data = &(
+            (uint8_t *)
+                incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t) +
+                                        cmd->surfacekeylength * 2];
 
         if (nrects > 0) {
-            if (qws_convert_from_utf16(&surface_key, (const uint8_t *)
-                    &((char *) incoming_pkt->raw_data)[cmd->nrectangles * sizeof(qws_rect_t)],
+            if (qws_convert_from_utf16(
+                    &surface_key,
+                    (const uint8_t *)&(
+                        (char *)incoming_pkt
+                            ->raw_data)[cmd->nrectangles * sizeof(qws_rect_t)],
                     cmd->surfacekeylength, QWS_UTF16_LE, NULL) != 0) {
-                fprintf(stderr, "[qwswayland] Illegal surface key from client %d\n",
-                    cl->client_id);
+                fprintf(stderr,
+                        "[qwswayland] Illegal surface key from client %d\n",
+                        cl->client_id);
                 free(surface_key);
                 break;
             }
 
             if (strcmp(surface_key, "shm") == 0 &&
-                    cmd->surfacedatalength >= (int32_t)sizeof(qws_cmd_region_surface_data_shm_t)) {
+                cmd->surfacedatalength >=
+                    (int32_t)sizeof(qws_cmd_region_surface_data_shm_t)) {
                 const qws_cmd_region_surface_data_shm_t *sd =
                     (const qws_cmd_region_surface_data_shm_t *)surface_data;
 
@@ -228,10 +229,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
              * use it to size the Wayland surface. */
             qwswl_update_geometry(state, win, rects, nrects);
 
-            /* If the surface for the window already exists, then 
+            /* If the surface for the window already exists, then
              * we're able to actually display content. Otherwise, we
              * need to wait until we are being let know what type
-             * of window we are actually dealing with. And when is 
+             * of window we are actually dealing with. And when is
              * the best time for that to happen:
              *  - during creation? No way.
              *  - during region definition? That's too easy.
@@ -243,7 +244,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             qwswl_hide_window(state, win);
         }
 
-        /* Emit events for all changes that might have occurred on our 
+        /* Emit events for all changes that might have occurred on our
          * windows after the region change */
         qwswl_update_regions(state, cl, win, send_region_event);
 
@@ -258,18 +259,22 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         qwswl_window_t *win = qwswl_find_or_allocate_window(cl, cmd->window);
 
-        if (qws_convert_from_utf16(&region_name, (const uint8_t *)
-                incoming_pkt->raw_data, cmd->name_bytes / 2, QWS_UTF16_LE, NULL) != 0) {
+        if (qws_convert_from_utf16(
+                &region_name, (const uint8_t *)incoming_pkt->raw_data,
+                cmd->name_bytes / 2, QWS_UTF16_LE, NULL) != 0) {
             fprintf(stderr, "[qwswayland] Illegal region name from client %d\n",
-                cl->client_id);
+                    cl->client_id);
             free(region_name);
             break;
         }
-        if (qws_convert_from_utf16(&region_caption, (const uint8_t *)
-                &((char *) incoming_pkt->raw_data)[cmd->name_bytes],
+        if (qws_convert_from_utf16(
+                &region_caption,
+                (const uint8_t *)&(
+                    (char *)incoming_pkt->raw_data)[cmd->name_bytes],
                 cmd->caption_bytes / 2, QWS_UTF16_LE, NULL) != 0) {
-            fprintf(stderr, "[qwswayland] Illegal region caption from client %d\n",
-                cl->client_id);
+            fprintf(stderr,
+                    "[qwswayland] Illegal region caption from client %d\n",
+                    cl->client_id);
             free(region_name);
             free(region_caption);
             break;
@@ -286,21 +291,22 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             (qws_cmd_repaint_region_t *)incoming_pkt->simple_data;
         qws_rect_t *rects = (qws_rect_t *)incoming_pkt->raw_data;
 
-        qwswl_window_t *win = 
-            qwswl_find_or_allocate_window(cl, cmd->window);
+        qwswl_window_t *win = qwswl_find_or_allocate_window(cl, cmd->window);
         if (!win->wl_surface) {
-            qwswl_create_window(state, win, 
-                qwswl_client_window_get_first_toplevel_below(cl, win), cmd->window_flags);
+            qwswl_create_window(
+                state, win,
+                qwswl_client_window_get_first_toplevel_below(cl, win),
+                cmd->window_flags);
         }
 
         qwswl_update_regions(state, cl, NULL, send_region_event);
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
 
-        /* This might be not exactly what we want, since this will 
+        /* This might be not exactly what we want, since this will
          * affect the entire surface and not just the ones that
          * have been specified by the client... Who knows? */
         qwswl_set_opacity(state, win, cmd->opaque ? 255 : 0);
-        
+
         break;
     }
 
@@ -318,14 +324,14 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * server as expected by the move, e.g. when a rect is moved by (dx,dy),
          * then all coordinates in each rect are also moved by (dx,dy).
          *
-         * Since we need to map the Wayland-local pointer coordinates to QWS 
+         * Since we need to map the Wayland-local pointer coordinates to QWS
          * global coordinates, we are even more required to have a shared
          * understanding about the window geometry with the client. Therefore,
          * it is rather shocking to all involved parties when the coordinate
          * system does not seem to agree anymore, since the cursor position
          * is suddenly replaced with the one obtained from shared memory that
          * is zero-initialized by default. This basically causes us to add
-         * a large offset to the position as these are basically then 
+         * a large offset to the position as these are basically then
          * also window-local coordinates... which will make the pointer jump
          * a lot.
          *
@@ -335,8 +341,8 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * larger with every subsequent move operation.
          */
         if (qwswl_move_window(state, win, cmd->dx, cmd->dy)) {
-            /* Only ack the move with region events if the move actually is valid
-             * on the region in the current state. */
+            /* Only ack the move with region events if the move actually is
+             * valid on the region in the current state. */
             qwswl_update_regions(state, cl, NULL, send_region_event);
         }
         break;
@@ -346,7 +352,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             (qws_cmd_region_destroy_t *)incoming_pkt->simple_data;
 
         qwswl_window_t *win = qwswl_find_or_allocate_window(cl, cmd->window);
-        
+
         qwswl_destroy_window(state, win);
         qwswl_update_regions(state, cl, NULL, send_region_event);
 
@@ -360,39 +366,39 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qwswl_window_t *win = qwswl_find_or_allocate_window(cl, cmd->window);
 
         switch (cmd->altitude) {
-            case QWS_ALTITUDE_STAYS_ON_TOP:
-                win->on_top = true;
-                qwswl_stack_raise_window(cl, win);
-                break;
-            case QWS_ALTITUDE_RAISE:
-                qwswl_stack_raise_window(cl, win);
-                break;
-            case QWS_ALTITUDE_LOWER:
-                qwswl_stack_lower_window(cl, win);
-                break;
+        case QWS_ALTITUDE_STAYS_ON_TOP:
+            win->on_top = true;
+            qwswl_stack_raise_window(cl, win);
+            break;
+        case QWS_ALTITUDE_RAISE:
+            qwswl_stack_raise_window(cl, win);
+            break;
+        case QWS_ALTITUDE_LOWER:
+            qwswl_stack_lower_window(cl, win);
+            break;
         }
 
         if (win->parent)
             qwswl_reorder_subsurfaces(cl, win->parent);
 
-        /* The region event is crucial if the window is not visible 
-         * yet, since without a region event, the client will never 
-         * event try to display anything. 
-         * 
+        /* The region event is crucial if the window is not visible
+         * yet, since without a region event, the client will never
+         * event try to display anything.
+         *
          * Therefore, we always have to emit a region event if
          * for the given window if it is meant to be visible. */
         qwswl_update_regions(state, cl, win, send_region_event);
-        
+
         break;
     }
 
     case QWS_CMD_REQUEST_FOCUS: {
-        /* 
-         * There is not that much that we can do for the client here, since the 
-         * compositor controls basically all user-related input in an (sometimes 
+        /*
+         * There is not that much that we can do for the client here, since the
+         * compositor controls basically all user-related input in an (sometimes
          * well-meaning, but a bit misguided IMHO) effort to protect the user
-         * from weird or intrusive behaviour by applications. 
-         * 
+         * from weird or intrusive behaviour by applications.
+         *
          * For now we assume that a command without a related focus event will
          * be considered by the client as a decline of the request.
          * In doubt, we might need to force focus events for the currently
@@ -428,10 +434,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * TODO: implement a simple key-value store if needed. */
         if (type == QWS_CMD_GET_PROPERTY) {
             qws_cmd_get_property_t *cmd =
-            (qws_cmd_get_property_t *)incoming_pkt->simple_data;
+                (qws_cmd_get_property_t *)incoming_pkt->simple_data;
             /* Send empty reply */
-            qws_packet_t *reply = qws_make_property_reply(
-                cmd->window, cmd->property, NULL, 0);
+            qws_packet_t *reply =
+                qws_make_property_reply(cmd->window, cmd->property, NULL, 0);
             qws_trace_packet(cl->client_id, reply, true);
             qws_write_packet(cl->fd, reply);
         }
@@ -480,12 +486,12 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         // assert(false);
         break;
     }
-    
+
     if (qws_is_synchronous_command(type)) {
-        /* Increment communication semaphore after completing synchronous commands.
-         * The client blocks in sendSynchronousCommand() and won't process the event 
-         * until it can decrement the semaphore. The server has to increment the semaphore
-         * first after sending the event. */
+        /* Increment communication semaphore after completing synchronous
+         * commands. The client blocks in sendSynchronousCommand() and won't
+         * process the event until it can decrement the semaphore. The server
+         * has to increment the semaphore first after sending the event. */
         qwslock_unlock(cl->lock, QWS_LOCK_COMMUNICATION);
     }
 }

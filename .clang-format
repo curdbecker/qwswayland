@@ -1,0 +1,8 @@
+BasedOnStyle: LLVM
+ColumnLimit: 80
+IndentWidth: 4
+UseTab: Never
+BreakBeforeBraces: Attach
+AlignAfterOpenBracket: Align
+ReflowComments: true
+SpaceBeforeParens: ControlStatements

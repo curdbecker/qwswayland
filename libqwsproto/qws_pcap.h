@@ -44,9 +44,8 @@ qws_pcap_writer_t *qws_pcap_writer_open(const char *path);
  * direction: 0 = client→server (command), 1 = server→client (event)
  * client_id: session identifier (truncated to uint8_t)
  * Returns 0 on success, -1 on error. */
-int qws_pcap_writer_write(qws_pcap_writer_t *w,
-                           uint8_t direction, uint8_t client_id,
-                           const qws_packet_t *pkt);
+int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
+                          uint8_t client_id, const qws_packet_t *pkt);
 
 /* Flush and close the file. NULL-safe. */
 void qws_pcap_writer_close(qws_pcap_writer_t *w);

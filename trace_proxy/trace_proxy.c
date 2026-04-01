@@ -6,20 +6,21 @@
 #include "trace_proxy.h"
 #include "qws_trace.h"
 
+#include <assert.h>
+#include <errno.h>
+#include <pthread.h>
+#include <signal.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <errno.h>
-#include <assert.h>
-#include <pthread.h>
-#include <stdatomic.h>
-#include <signal.h>
 #include <time.h>
+#include <unistd.h>
 
 #define READ_BUF_SIZE 65536
 
-/* Defined in main.c; set to 1 by the signal handler before listen_fd is closed. */
+/* Defined in main.c; set to 1 by the signal handler before listen_fd is closed.
+ */
 extern volatile sig_atomic_t g_interrupted;
 
 /* ------------------------------------------------------------------ */
@@ -27,8 +28,7 @@ extern volatile sig_atomic_t g_interrupted;
 /* ------------------------------------------------------------------ */
 
 /* Write all `len` bytes to fd, handling EINTR. Returns 0 on success. */
-static int write_all(int fd, const void *buf, size_t len)
-{
+static int write_all(int fd, const void *buf, size_t len) {
     size_t written = 0;
     while (written < len) {
         ssize_t n = write(fd, (const uint8_t *)buf + written, len - written);
@@ -46,8 +46,7 @@ static int write_all(int fd, const void *buf, size_t len)
 /* Trace queue                                                          */
 /* ------------------------------------------------------------------ */
 
-static int trace_queue_init(trace_queue_t *tq)
-{
+static int trace_queue_init(trace_queue_t *tq) {
     tq->head = NULL;
     tq->tail = NULL;
     if (pthread_mutex_init(&tq->lock, NULL) != 0)
@@ -59,8 +58,7 @@ static int trace_queue_init(trace_queue_t *tq)
     return 0;
 }
 
-static void trace_queue_destroy(trace_queue_t *tq)
-{
+static void trace_queue_destroy(trace_queue_t *tq) {
     /* Drain any remaining items (should only happen on abnormal exit). */
     trace_item_t *item = tq->head;
     while (item) {
@@ -77,8 +75,7 @@ static void trace_queue_destroy(trace_queue_t *tq)
 /* Enqueue one packet; ownership of pkt transfers into the queue.
  * Pass pkt=NULL to enqueue the shutdown sentinel. */
 static void trace_enqueue(trace_queue_t *tq, qws_packet_t *pkt,
-                           int32_t client_id, bool outgoing)
-{
+                          int32_t client_id, bool outgoing) {
     trace_item_t *item = malloc(sizeof(*item));
     if (!item) {
         /* OOM: drop rather than crash */
@@ -86,10 +83,10 @@ static void trace_enqueue(trace_queue_t *tq, qws_packet_t *pkt,
             qws_packet_free(pkt);
         return;
     }
-    item->pkt       = pkt;
+    item->pkt = pkt;
     item->client_id = client_id;
-    item->outgoing  = outgoing;
-    item->next      = NULL;
+    item->outgoing = outgoing;
+    item->next = NULL;
 
     pthread_mutex_lock(&tq->lock);
     if (tq->tail)
@@ -105,8 +102,7 @@ static void trace_enqueue(trace_queue_t *tq, qws_packet_t *pkt,
 /* Tracer thread                                                        */
 /* ------------------------------------------------------------------ */
 
-static void *tracer_thread_fn(void *arg)
-{
+static void *tracer_thread_fn(void *arg) {
     trace_queue_t *tq = (trace_queue_t *)arg;
 
     for (;;) {
@@ -139,14 +135,13 @@ static void *tracer_thread_fn(void *arg)
 /* Parse `len` bytes from `buf` through `reader`; enqueue each complete
  * packet into `tq`.  Ownership of every parsed pkt transfers to tq. */
 static void feed_and_enqueue(qws_reader_t *reader, const uint8_t *buf,
-                              size_t len, int32_t client_id, bool outgoing,
-                              trace_queue_t *tq)
-{
+                             size_t len, int32_t client_id, bool outgoing,
+                             trace_queue_t *tq) {
     size_t offset = 0;
     while (offset < len) {
         qws_packet_t *pkt = NULL;
-        size_t consumed = qws_reader_feed(reader, buf + offset,
-                                          len - offset, &pkt);
+        size_t consumed =
+            qws_reader_feed(reader, buf + offset, len - offset, &pkt);
         assert(consumed != 0 || pkt != NULL);
         offset += consumed;
         if (pkt)
@@ -160,14 +155,13 @@ static void feed_and_enqueue(qws_reader_t *reader, const uint8_t *buf,
 
 /* Called by either direction thread when it detects a disconnect.
  * The first caller (atomic 0→1) closes both fds; the second is a no-op. */
-static void session_close_fds(qwstrace_session_t *sess, const char *who)
-{
+static void session_close_fds(qwstrace_session_t *sess, const char *who) {
     int was_dead = atomic_exchange(&sess->dead, 1);
     if (was_dead)
         return;
 
-    fprintf(stderr, "--- session %d: %s disconnected ---\n",
-            sess->client_id, who);
+    fprintf(stderr, "--- session %d: %s disconnected ---\n", sess->client_id,
+            who);
 
     pthread_mutex_lock(&sess->close_mutex);
     if (sess->client_fd >= 0) {
@@ -194,9 +188,8 @@ typedef struct {
 /* Client-direction thread: client_fd → server_fd                      */
 /* ------------------------------------------------------------------ */
 
-static void *client_dir_thread_fn(void *arg)
-{
-    dir_thread_arg_t   *a    = (dir_thread_arg_t *)arg;
+static void *client_dir_thread_fn(void *arg) {
+    dir_thread_arg_t *a = (dir_thread_arg_t *)arg;
     qwstrace_session_t *sess = a->sess;
     free(a);
 
@@ -223,8 +216,8 @@ static void *client_dir_thread_fn(void *arg)
             session_close_fds(sess, "client");
 
         /* Parse and enqueue for tracing */
-        feed_and_enqueue(&sess->cmd_reader, buf, (size_t)n,
-                         sess->client_id, false, sess->tq);
+        feed_and_enqueue(&sess->cmd_reader, buf, (size_t)n, sess->client_id,
+                         false, sess->tq);
     }
 
     return NULL;
@@ -234,9 +227,8 @@ static void *client_dir_thread_fn(void *arg)
 /* Server-direction thread: server_fd → client_fd                      */
 /* ------------------------------------------------------------------ */
 
-static void *server_dir_thread_fn(void *arg)
-{
-    dir_thread_arg_t   *a    = (dir_thread_arg_t *)arg;
+static void *server_dir_thread_fn(void *arg) {
+    dir_thread_arg_t *a = (dir_thread_arg_t *)arg;
     qwstrace_session_t *sess = a->sess;
     free(a);
 
@@ -263,8 +255,8 @@ static void *server_dir_thread_fn(void *arg)
             session_close_fds(sess, "server");
 
         /* Parse and enqueue for tracing */
-        feed_and_enqueue(&sess->evt_reader, buf, (size_t)n,
-                         sess->client_id, true, sess->tq);
+        feed_and_enqueue(&sess->evt_reader, buf, (size_t)n, sess->client_id,
+                         true, sess->tq);
     }
 
     return NULL;
@@ -275,8 +267,7 @@ static void *server_dir_thread_fn(void *arg)
 /* ------------------------------------------------------------------ */
 
 static qwstrace_session_t *session_create(int cfd, int sfd, int client_id,
-                                           trace_queue_t *tq)
-{
+                                          trace_queue_t *tq) {
     qwstrace_session_t *sess = calloc(1, sizeof(*sess));
     if (!sess)
         return NULL;
@@ -284,16 +275,15 @@ static qwstrace_session_t *session_create(int cfd, int sfd, int client_id,
     sess->client_fd = cfd;
     sess->server_fd = sfd;
     sess->client_id = client_id;
-    sess->tq        = tq;
+    sess->tq = tq;
     atomic_init(&sess->dead, 0);
     pthread_mutex_init(&sess->close_mutex, NULL);
-    qws_reader_init(&sess->cmd_reader, true  /* reading commands */);
+    qws_reader_init(&sess->cmd_reader, true /* reading commands */);
     qws_reader_init(&sess->evt_reader, false /* reading events  */);
     return sess;
 }
 
-static void session_start_threads(qwstrace_session_t *sess)
-{
+static void session_start_threads(qwstrace_session_t *sess) {
     dir_thread_arg_t *a1 = malloc(sizeof(*a1));
     a1->sess = sess;
     a1->is_client_dir = true;
@@ -308,8 +298,7 @@ static void session_start_threads(qwstrace_session_t *sess)
 }
 
 /* Stop both direction threads and free the session. */
-static void session_stop_and_free(qwstrace_session_t *sess)
-{
+static void session_stop_and_free(qwstrace_session_t *sess) {
     /* Close fds to unblock blocking read() calls in both threads. */
     session_close_fds(sess, "session-drop");
 
@@ -329,8 +318,7 @@ static void session_stop_and_free(qwstrace_session_t *sess)
 /* Wait for upstream server                                            */
 /* ------------------------------------------------------------------ */
 
-static void wait_until_server_ready(qwstrace_state_t *st)
-{
+static void wait_until_server_ready(qwstrace_state_t *st) {
     int sfd;
     while ((sfd = qws_client_connect(st->upstream_paths.socket)) < 0) {
         if (g_interrupted)
@@ -349,25 +337,29 @@ static void wait_until_server_ready(qwstrace_state_t *st)
 /* Init / Run / Shutdown                                               */
 /* ------------------------------------------------------------------ */
 
-int qwstrace_init(qwstrace_state_t *st, int listen_display, int upstream_display)
-{
+int qwstrace_init(qwstrace_state_t *st, int listen_display,
+                  int upstream_display) {
     memset(st, 0, sizeof(*st));
     st->listen_fd = -1;
 
     if (qws_init_display_dir(listen_display, &st->listen_paths) != 0) {
-        fprintf(stderr, "qwstrace: failed to initialise display directory for :%d\n",
+        fprintf(stderr,
+                "qwstrace: failed to initialise display directory for :%d\n",
                 listen_display);
         return -1;
     }
     if (qws_display_paths_fill(upstream_display, &st->upstream_paths) != 0) {
-        fprintf(stderr, "qwstrace: failed to construct paths for upstream display :%d\n",
-                upstream_display);
+        fprintf(
+            stderr,
+            "qwstrace: failed to construct paths for upstream display :%d\n",
+            upstream_display);
         return -1;
     }
 
     if (symlink(st->upstream_paths.fontdb, st->listen_paths.fontdb) != 0) {
         fprintf(stderr, "qwstrace: failed to symlink fontdb %s -> %s: %s\n",
-                st->listen_paths.fontdb, st->upstream_paths.fontdb, strerror(errno));
+                st->listen_paths.fontdb, st->upstream_paths.fontdb,
+                strerror(errno));
         return -1;
     }
 
@@ -391,7 +383,8 @@ int qwstrace_init(qwstrace_state_t *st, int listen_display, int upstream_display
     }
 
     st->running = true;
-    fprintf(stderr, "qws_trace_proxy: listening on %s\n", st->listen_paths.socket);
+    fprintf(stderr, "qws_trace_proxy: listening on %s\n",
+            st->listen_paths.socket);
     fprintf(stderr, "qws_trace_proxy: will connect upstream to %s\n",
             st->upstream_paths.socket);
     return 0;
@@ -399,14 +392,13 @@ int qwstrace_init(qwstrace_state_t *st, int listen_display, int upstream_display
 
 /* ------------------------------------------------------------------ */
 
-int qwstrace_run(qwstrace_state_t *st)
-{
+int qwstrace_run(qwstrace_state_t *st) {
     if (trace_queue_init(&st->trace_queue) != 0) {
         fprintf(stderr, "qwstrace: failed to init trace queue\n");
         return -1;
     }
-    if (pthread_create(&st->tracer_thread, NULL,
-                       tracer_thread_fn, &st->trace_queue) != 0) {
+    if (pthread_create(&st->tracer_thread, NULL, tracer_thread_fn,
+                       &st->trace_queue) != 0) {
         fprintf(stderr, "qwstrace: failed to start tracer thread\n");
         trace_queue_destroy(&st->trace_queue);
         return -1;
@@ -470,8 +462,7 @@ int qwstrace_run(qwstrace_state_t *st)
 
 /* ------------------------------------------------------------------ */
 
-void qwstrace_shutdown(qwstrace_state_t *st)
-{
+void qwstrace_shutdown(qwstrace_state_t *st) {
     /* session and tracer are already cleaned up by qwstrace_run(); guard
      * defensively in case init succeeded but run was never called. */
     if (st->session) {

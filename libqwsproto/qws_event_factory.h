@@ -7,8 +7,8 @@
 #define QWS_EVENT_FACTORY_H
 
 #include "qws_proto.h"
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -24,9 +24,8 @@ extern "C" {
  * display_spec: e.g., ":0" (sent as rawData).
  * server_shm_id: SysV shm id for the shared display memory region.
  * client_id: unique id assigned to this client. */
-qws_packet_t *qws_make_connected_event(int32_t client_id,
-                                         int32_t server_shm_id,
-                                         const char *display_spec);
+qws_packet_t *qws_make_connected_event(int32_t client_id, int32_t server_shm_id,
+                                       const char *display_spec);
 
 /* Build a Creation event (ID range assignment).
  * object_id: first ID in the range.
@@ -36,29 +35,29 @@ qws_packet_t *qws_make_creation_event(int32_t object_id, int32_t count);
 /* Build a Region event: tell client about its allocated window region.
  * rects: array of qws_rect_t. nrects: count. */
 qws_packet_t *qws_make_region_event(int32_t window, int32_t type,
-                                      const qws_rect_t *rects, int32_t nrects);
+                                    const qws_rect_t *rects, int32_t nrects);
 
 /* Build a Mouse event. */
-qws_packet_t *qws_make_mouse_event(int32_t window,
-                                     int32_t x_root, int32_t y_root,
-                                     int32_t state, int32_t delta, int32_t time_ms);
+qws_packet_t *qws_make_mouse_event(int32_t window, int32_t x_root,
+                                   int32_t y_root, int32_t state, int32_t delta,
+                                   int32_t time_ms);
 
 /* Build a Key event. */
-qws_packet_t *qws_make_key_event(int32_t window,
-                                   uint16_t unicode, uint32_t keycode,
-                                   uint32_t modifiers,
-                                   bool is_press, bool auto_repeat);
+qws_packet_t *qws_make_key_event(int32_t window, uint16_t unicode,
+                                 uint32_t keycode, uint32_t modifiers,
+                                 bool is_press, bool auto_repeat);
 
 /* Build a Focus event. */
 qws_packet_t *qws_make_focus_event(int32_t window, qws_focus_flag_t flag);
 
 /* Build a MaxWindowRect event. */
 qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1,
-    int32_t y1, int32_t x2, int32_t y2);
+                                             int32_t y1, int32_t x2,
+                                             int32_t y2);
 
 /* Build a PropertyReply event. */
 qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
-                                        const void *data, int32_t len);
+                                      const void *data, int32_t len);
 
 #ifdef __cplusplus
 }

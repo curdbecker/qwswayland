@@ -6,8 +6,8 @@
 #ifndef QWS_QDATASTREAM_H
 #define QWS_QDATASTREAM_H
 
-#include <stdio.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #ifdef __cplusplus
 extern "C" {

@@ -9,19 +9,17 @@
 
 #include <assert.h>
 
-qws_packet_t *qws_make_connected_event(int32_t client_id,
-                                         int32_t server_shm_id,
-                                         const char *display_spec)
-{
+qws_packet_t *qws_make_connected_event(int32_t client_id, int32_t server_shm_id,
+                                       const char *display_spec) {
     if (!display_spec)
         return NULL;
 
-    size_t spec_len = strlen(display_spec) + 1;  /* include null terminator */
+    size_t spec_len = strlen(display_spec) + 1; /* include null terminator */
 
     qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_CONNECTED,
-                                           sizeof(qws_evt_connected_t),
-                                           spec_len);
-    if (!pkt) return NULL;
+                                         sizeof(qws_evt_connected_t), spec_len);
+    if (!pkt)
+        return NULL;
 
     qws_evt_connected_t *d = (qws_evt_connected_t *)pkt->simple_data;
     d->window = 0;
@@ -34,11 +32,11 @@ qws_packet_t *qws_make_connected_event(int32_t client_id,
     return pkt;
 }
 
-qws_packet_t *qws_make_creation_event(int32_t object_id, int32_t count)
-{
-    qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_CREATION,
-                                           sizeof(qws_evt_creation_t), 0);
-    if (!pkt) return NULL;
+qws_packet_t *qws_make_creation_event(int32_t object_id, int32_t count) {
+    qws_packet_t *pkt =
+        qws_packet_alloc(QWS_EVT_CREATION, sizeof(qws_evt_creation_t), 0);
+    if (!pkt)
+        return NULL;
 
     qws_evt_creation_t *d = (qws_evt_creation_t *)pkt->simple_data;
     d->object_id = object_id;
@@ -47,14 +45,13 @@ qws_packet_t *qws_make_creation_event(int32_t object_id, int32_t count)
     return pkt;
 }
 
-
 qws_packet_t *qws_make_region_event(int32_t window, int32_t type,
-                                      const qws_rect_t *rects, int32_t nrects)
-{
+                                    const qws_rect_t *rects, int32_t nrects) {
     size_t raw_len = (size_t)nrects * sizeof(qws_rect_t);
-    qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_REGION,
-                                           sizeof(qws_evt_region_t), raw_len);
-    if (!pkt) return NULL;
+    qws_packet_t *pkt =
+        qws_packet_alloc(QWS_EVT_REGION, sizeof(qws_evt_region_t), raw_len);
+    if (!pkt)
+        return NULL;
 
     qws_evt_region_t *d = (qws_evt_region_t *)pkt->simple_data;
     d->window = window;
@@ -68,13 +65,13 @@ qws_packet_t *qws_make_region_event(int32_t window, int32_t type,
     return pkt;
 }
 
-qws_packet_t *qws_make_mouse_event(int32_t window,
-                                     int32_t x_root, int32_t y_root,
-                                     int32_t state, int32_t delta, int32_t time_ms)
-{
-    qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_MOUSE,
-                                           sizeof(qws_evt_mouse_t), 0);
-    if (!pkt) return NULL;
+qws_packet_t *qws_make_mouse_event(int32_t window, int32_t x_root,
+                                   int32_t y_root, int32_t state, int32_t delta,
+                                   int32_t time_ms) {
+    qws_packet_t *pkt =
+        qws_packet_alloc(QWS_EVT_MOUSE, sizeof(qws_evt_mouse_t), 0);
+    if (!pkt)
+        return NULL;
 
     qws_evt_mouse_t *d = (qws_evt_mouse_t *)pkt->simple_data;
     d->window = window;
@@ -87,31 +84,29 @@ qws_packet_t *qws_make_mouse_event(int32_t window,
     return pkt;
 }
 
-qws_packet_t *qws_make_key_event(int32_t window,
-                                   uint16_t unicode, uint32_t keycode,
-                                   uint32_t modifiers,
-                                   bool is_press, bool auto_repeat)
-{
-    qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_KEY,
-                                           sizeof(qws_evt_key_t), 0);
-    if (!pkt) return NULL;
+qws_packet_t *qws_make_key_event(int32_t window, uint16_t unicode,
+                                 uint32_t keycode, uint32_t modifiers,
+                                 bool is_press, bool auto_repeat) {
+    qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_KEY, sizeof(qws_evt_key_t), 0);
+    if (!pkt)
+        return NULL;
 
     qws_evt_key_t *d = (qws_evt_key_t *)pkt->simple_data;
-    d->window    = window;
-    d->keycode   = keycode;
+    d->window = window;
+    d->keycode = keycode;
     d->modifiers = modifiers;
-    d->unicode   = unicode;
-    d->flags     = (is_press    ? QWS_KEY_FLAG_PRESS       : 0u)
-                 | (auto_repeat ? QWS_KEY_FLAG_AUTO_REPEAT  : 0u);
+    d->unicode = unicode;
+    d->flags = (is_press ? QWS_KEY_FLAG_PRESS : 0u) |
+               (auto_repeat ? QWS_KEY_FLAG_AUTO_REPEAT : 0u);
 
     return pkt;
 }
 
-qws_packet_t *qws_make_focus_event(int32_t window, qws_focus_flag_t flag)
-{
-    qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_FOCUS,
-                                           sizeof(qws_evt_focus_t), 0);
-    if (!pkt) return NULL;
+qws_packet_t *qws_make_focus_event(int32_t window, qws_focus_flag_t flag) {
+    qws_packet_t *pkt =
+        qws_packet_alloc(QWS_EVT_FOCUS, sizeof(qws_evt_focus_t), 0);
+    if (!pkt)
+        return NULL;
 
     qws_evt_focus_t *d = (qws_evt_focus_t *)pkt->simple_data;
     d->window = window;
@@ -121,13 +116,15 @@ qws_packet_t *qws_make_focus_event(int32_t window, qws_focus_flag_t flag)
 }
 
 qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1,
-    int32_t y1, int32_t x2, int32_t y2)
-{
+                                             int32_t y1, int32_t x2,
+                                             int32_t y2) {
     qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_MAX_WINDOW_RECT,
-                                           sizeof(qws_evt_max_window_rect_t), 0);
-    if (!pkt) return NULL;
+                                         sizeof(qws_evt_max_window_rect_t), 0);
+    if (!pkt)
+        return NULL;
 
-    qws_evt_max_window_rect_t *d = (qws_evt_max_window_rect_t *)pkt->simple_data;
+    qws_evt_max_window_rect_t *d =
+        (qws_evt_max_window_rect_t *)pkt->simple_data;
     d->window = window;
     d->rect.x1 = x1;
     d->rect.y1 = y1;
@@ -138,12 +135,12 @@ qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1,
 }
 
 qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
-                                        const void *data, int32_t len)
-{
+                                      const void *data, int32_t len) {
     qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_PROPERTY_REPLY,
-                                           sizeof(qws_evt_property_reply_t),
-                                           (size_t)(len > 0 ? len : 0));
-    if (!pkt) return NULL;
+                                         sizeof(qws_evt_property_reply_t),
+                                         (size_t)(len > 0 ? len : 0));
+    if (!pkt)
+        return NULL;
 
     qws_evt_property_reply_t *d = (qws_evt_property_reply_t *)pkt->simple_data;
     d->window = window;

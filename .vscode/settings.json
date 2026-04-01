@@ -1,4 +1,7 @@
 {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "ms-vscode.cpptools",
+    "C_Cpp.clang_format_style": "file",
     "mesonbuild.configureOnOpen": true,
     "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
     "C_Cpp.default.compileCommands": "/microscope/qwswayland/builddir/compile_commands.json",
@@ -17,6 +20,8 @@
         "qapplication",
         "qcursor",
         "qlock",
+        "qnamespace",
+        "qwscommand",
         "qwslock",
         "qwstrace",
         "qwswayland",

@@ -10,30 +10,29 @@
 #ifdef QWS_HAVE_PCAP
 
 #include <pcap/pcap.h>
-#include <sys/time.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
 /* DLT_USER0 = 147  (libpcap's first user-defined link type) */
-#define QWS_PCAP_DLT        147
-#define QWS_PCAP_SNAPLEN    65535
+#define QWS_PCAP_DLT 147
+#define QWS_PCAP_SNAPLEN 65535
 
 /* Capture frame header — precedes the raw QWS wire bytes in each frame */
 typedef struct __attribute__((packed)) {
-    uint8_t  direction;   /* 0 = client→server, 1 = server→client */
-    uint8_t  client_id;
-    uint16_t reserved;    /* zeroed */
+    uint8_t direction; /* 0 = client→server, 1 = server→client */
+    uint8_t client_id;
+    uint16_t reserved; /* zeroed */
 } qws_capture_hdr_t;
 
 struct qws_pcap_writer {
-    pcap_t        *pcap;
+    pcap_t *pcap;
     pcap_dumper_t *dumper;
 };
 
 /* ------------------------------------------------------------------ */
 
-qws_pcap_writer_t *qws_pcap_writer_open(const char *path)
-{
+qws_pcap_writer_t *qws_pcap_writer_open(const char *path) {
     qws_pcap_writer_t *w = calloc(1, sizeof(*w));
     if (!w)
         return NULL;
@@ -47,8 +46,8 @@ qws_pcap_writer_t *qws_pcap_writer_open(const char *path)
 
     w->dumper = pcap_dump_open(w->pcap, path);
     if (!w->dumper) {
-        fprintf(stderr, "qws_pcap: cannot open '%s': %s\n",
-                path, pcap_geterr(w->pcap));
+        fprintf(stderr, "qws_pcap: cannot open '%s': %s\n", path,
+                pcap_geterr(w->pcap));
         pcap_close(w->pcap);
         free(w);
         return NULL;
@@ -59,10 +58,8 @@ qws_pcap_writer_t *qws_pcap_writer_open(const char *path)
 
 /* ------------------------------------------------------------------ */
 
-int qws_pcap_writer_write(qws_pcap_writer_t *w,
-                           uint8_t direction, uint8_t client_id,
-                           const qws_packet_t *pkt)
-{
+int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
+                          uint8_t client_id, const qws_packet_t *pkt) {
     if (!w || !pkt)
         return -1;
 
@@ -78,21 +75,20 @@ int qws_pcap_writer_write(qws_pcap_writer_t *w,
     qws_capture_hdr_t *cap = (qws_capture_hdr_t *)buf;
     cap->direction = direction;
     cap->client_id = client_id;
-    cap->reserved  = 0;
+    cap->reserved = 0;
 
     /* Serialize QWS wire bytes immediately after the capture header */
-    qws_packet_serialize(pkt, buf + sizeof(qws_capture_hdr_t),
-                         wire_len);
+    qws_packet_serialize(pkt, buf + sizeof(qws_capture_hdr_t), wire_len);
 
     /* Build pcap packet header */
     struct timeval tv;
     gettimeofday(&tv, NULL);
 
     struct pcap_pkthdr hdr;
-    hdr.ts.tv_sec  = tv.tv_sec;
+    hdr.ts.tv_sec = tv.tv_sec;
     hdr.ts.tv_usec = tv.tv_usec;
     hdr.caplen = (bpf_u_int32)frame_len;
-    hdr.len    = (bpf_u_int32)frame_len;
+    hdr.len = (bpf_u_int32)frame_len;
 
     pcap_dump((u_char *)w->dumper, &hdr, buf);
     pcap_dump_flush(w->dumper);
@@ -103,8 +99,7 @@ int qws_pcap_writer_write(qws_pcap_writer_t *w,
 
 /* ------------------------------------------------------------------ */
 
-void qws_pcap_writer_close(qws_pcap_writer_t *w)
-{
+void qws_pcap_writer_close(qws_pcap_writer_t *w) {
     if (!w)
         return;
     if (w->dumper)
@@ -117,25 +112,25 @@ void qws_pcap_writer_close(qws_pcap_writer_t *w)
 #else /* QWS_HAVE_PCAP not available — stub implementations */
 
 /* Opaque stub — never allocated; open() always returns NULL */
-struct qws_pcap_writer { int _unused; };
+struct qws_pcap_writer {
+    int _unused;
+};
 
-qws_pcap_writer_t *qws_pcap_writer_open(const char *path)
-{
+qws_pcap_writer_t *qws_pcap_writer_open(const char *path) {
     (void)path;
     fprintf(stderr, "qws_pcap: built without libpcap, capture unavailable\n");
     return NULL;
 }
 
 int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
-                           uint8_t client_id, const qws_packet_t *pkt)
-{
-    (void)w; (void)direction; (void)client_id; (void)pkt;
+                          uint8_t client_id, const qws_packet_t *pkt) {
+    (void)w;
+    (void)direction;
+    (void)client_id;
+    (void)pkt;
     return -1;
 }
 
-void qws_pcap_writer_close(qws_pcap_writer_t *w)
-{
-    (void)w;
-}
+void qws_pcap_writer_close(qws_pcap_writer_t *w) { (void)w; }
 
 #endif /* QWS_HAVE_PCAP */
