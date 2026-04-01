@@ -6,6 +6,8 @@
 #ifndef LIFECYCLE_H
 #define LIFECYCLE_H
 
+#include "seat.h"
+
 #include "qws_proto.h"
 #include "qws_lock.h"
 
@@ -39,9 +41,12 @@ typedef struct qwswl_state {
 
     qwswl_client_map_t   client_map;
 
-    /* Shared memory region and lock (display properties) */
+    /* Shared memory region, lock and weirdly shared pointer
+     * positions. */
     qws_shm_t            display_shm;
     qlock_t              *display_lock;
+    int32_t              *qt_last_x;
+    int32_t              *qt_last_y;
 
     /* Screen parameters (reported to QWS clients) */
     int32_t              screen_width;
@@ -71,6 +76,9 @@ typedef struct qwswl_state {
     struct wp_alpha_modifier_v1 *wp_alpha_modifier;
 
     struct xkb_context  *xkb_context;
+
+    qwswl_pointer_state_t  pointer_state;
+    qwswl_keyboard_state_t kbd_state;
 
     /* Event loop */
     bool                 running;

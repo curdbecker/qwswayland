@@ -8,7 +8,6 @@
 #include "client.h"
 #include "debug.h"
 #include "proxy.h"
-#include "seat.h"
 #include "qws_trace.h"
 
 #include <stdio.h>
@@ -274,18 +273,51 @@ int qwswl_init(qwswl_state_t *state, int qws_display,
             state->display_paths.socket);
 
     /* Create a shared memory region from the server-side to share display information
-     * with the client... and don't forget about the lock.
+     * with the client... and don't forget about the lock... and the cursor positions
+     * hiding itself in the shared memory region.
      *
      * This looks like a legacy way in earlier Qt Versions for sharing information 
      * between client and server. By now, the only real use that is left
-     * is apparently the sharing of override cursors - which we likely won't do.
+     * is apparently the sharing of override cursors.
      * 
-     * However, the client refuses to start without it, so we unfortunately need 
+     * Unfortunately, however, there is another subtle way in which the shared 
+     * memory region is still used in a quite frustratingly redundant way:
+     * 
+     * Communication of the pointer position in the last two int32_t of the shared
+     * memory region - Yes, in addition to the one sent via sockets!!!
+     *
+     * It seems to be rarely used, but therefore it is just even more surprising when
+     * it suddenly is used and produces quite weird overall effects. For instance,
+     * it is used during a move operation where it is used to reinitialize the
+     * pointer position sent via Unix sockets before... hiding itself in the QWS
+     * specific implementation of QCursor - see `src/gui/kernel/qcursor_qws.cpp:122`.
+     * 
+     * Therefore, the client refuses to start without it, so we unfortunately need 
      * the shm region and its lock.*/
     if (qws_shm_create(&state->display_shm, QWS_DISPLAY_SHM_SIZE) != 0) {
         fprintf(stderr, "[qwswayland] Failed to create display shm\n");
         return -1;
     }
+
+    {
+        int32_t *shm = (int32_t *) state->display_shm.base;
+        int size_in_ints = state->display_shm.size / sizeof(int32_t);
+
+        /* This will go quite wrong if shm is not int32_t aligned for
+         * whatever reason... */
+        assert(state->display_shm.size % sizeof(int32_t) == 0);
+
+        /*
+         * The shared cursor position is accessible via the global variables
+         * `qt_last_x` and `qt_last_y` - see for instance their initialisation in
+         * `src/gui/kernel/qapplication_qws.cpp:921`.
+         * 
+         * We (hopefully) calculate the same pointers here.
+         */ 
+        state->qt_last_x = &shm[size_in_ints - 1];
+        state->qt_last_y = &shm[size_in_ints - 2];
+    }
+    
     state->display_lock = qlock_create(state->display_paths.socket, 'd');
     if (state->display_lock == NULL) {
         fprintf(stderr, "[qwswayland] Failed to create display lock\n");
@@ -328,16 +360,12 @@ void qwswl_shutdown(qwswl_state_t *state)
     /* Clean up Wayland */
     if (state->wl_pointer)
         wl_pointer_destroy(state->wl_pointer);
-    if (state->wl_keyboard) {
-        qwswl_keyboard_data_t *kbd_data =
-            wl_keyboard_get_user_data(state->wl_keyboard);
-        if (kbd_data) {
-            xkb_state_unref(kbd_data->xkb_state);
-            xkb_keymap_unref(kbd_data->xkb_keymap);
-            free(kbd_data);
-        }
+    if (state->kbd_state.xkb_state)
+        xkb_state_unref(state->kbd_state.xkb_state);
+    if (state->kbd_state.xkb_keymap)
+        xkb_keymap_unref(state->kbd_state.xkb_keymap);
+    if (state->wl_keyboard)
         wl_keyboard_destroy(state->wl_keyboard);
-    }
     if (state->xkb_context)
         xkb_context_unref(state->xkb_context);
     if (state->wl_seat)

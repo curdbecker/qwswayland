@@ -308,8 +308,30 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qwswl_window_t *win = qwswl_lookup_window_on_client(cl, cmd->window);
         assert(win);
 
-        /* Only ack the move with a region event if the move actually is valid
-         * on the region in the current state. */
+        /*
+         * The QWS protocol seems to be filled with quite a lot of surprises.
+         *
+         * The RegionMove command physically moves the window on the screen and
+         * thereby also translates the rects reported by the client to the
+         * server as expected by the move, e.g. when a rect is moved by (dx,dy),
+         * then all coordinates in each rect are also moved by (dx,dy).
+         *
+         * Since we need to map the Wayland-local pointer coordinates to QWS 
+         * global coordinates, we are even more required to have a shared
+         * understanding about the window geometry with the client. Therefore,
+         * it is rather shocking to all involved parties when the coordinate
+         * system does not seem to agree anymore, since the cursor position
+         * is suddenly replaced with the one obtained from shared memory that
+         * is zero-initialized by default. This basically causes us to add
+         * a large offset to the position as these are basically then 
+         * also window-local coordinates... which will make the pointer jump
+         * a lot.
+         *
+         * If a pointer should jump while a move operation (using the window
+         * context menu etc.) is still happening, then client will think we
+         * moved our window quite a lot... and this delta will get even
+         * larger with every subsequent move operation.
+         */
         if (qwswl_move_window(state, win, cmd->dx, cmd->dy)) {
             /* Send region ack with the translated (clipped) rects */
             qws_packet_t *evt = qws_make_region_event(

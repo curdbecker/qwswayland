@@ -20,6 +20,7 @@
 #include <linux/input-event-codes.h>
 
 #include <assert.h>
+#include "debug.h"
 
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
@@ -27,87 +28,96 @@
 #include "stc/common.h"
 #include "stc/sys/utility.h"
 
-extern qwswl_state_t g_state;
-
 /* ================================================================
  * Wayland pointer listener → QWS mouse events
  * ================================================================ */
 
-static void update_pointer_position(qwswl_pointer_data_t *pointer_data,
-                                    wl_fixed_t sx, wl_fixed_t sy)
+static void send_pointer_update_event(qwswl_pointer_state_t *pstate,
+    int32_t scroll_delta)
 {
-    qwswl_window_t *win = pointer_data->win;
-    assert(pointer_data && win);
-
+    qwswl_window_t *win = pstate->win;
     qwswl_client_t *cl = win->client;
-
-    /* Translate surface-local coords to QWS global coords, but 
-     * clamp them to the maximum possible screen coordinates. 
-     * This should prevent the QWS client to attempt moving 
-     * elements out of the window surface. */
-    pointer_data->gx = 
-        c_min(c_max(win->geometry.x + wl_fixed_to_int(sx), 0), 
-            g_state.screen_width);
-    pointer_data->gy = 
-        c_min(c_max(win->geometry.y + wl_fixed_to_int(sy), 0),
-            g_state.screen_height);
-
-#ifdef QWSWL_DEBUG_POINTER_MOVEMENT
-    QWS_TRACE("qws_win=%d, surface_local=(%d,%d), global=(%d,%d)",
-             win->qws_id,
-             wl_fixed_to_int(sx), wl_fixed_to_int(sy),
-             pointer_data->gx, pointer_data->gy);
-#endif
 
     struct timespec _ts;
     clock_gettime(CLOCK_MONOTONIC, &_ts);
     int32_t time = (int32_t)(_ts.tv_sec * 1000 + _ts.tv_nsec / 1000000);
 
-    /* Send QWS mouse event to the owning client */
     qws_packet_t *evt = qws_make_mouse_event(
-        win->qws_id, pointer_data->gx, pointer_data->gy,
-        pointer_data->button_state, 0, time);
+        win->qws_id, pstate->gx, pstate->gy,
+        pstate->button_state, scroll_delta, time);
 
     qws_trace_packet(cl->client_id, evt, true);
     qws_write_packet(cl->fd, evt);
     qws_packet_free(evt);
 }
 
+static void update_pointer_position(qwswl_state_t *state,
+                                    wl_fixed_t sx, wl_fixed_t sy)
+{
+    qwswl_pointer_state_t *pstate = &state->pointer_state;
+    qwswl_window_t *win = pstate->win;
+    int32_t gx, gy;
+
+    /* Translate surface-local coords to QWS global coords */
+    gx = win->geometry.x + wl_fixed_to_int(sx);
+    gy = win->geometry.y + wl_fixed_to_int(sy);
+
+#ifdef QWSWL_DEBUG_POINTER_MOVEMENT
+    QWS_TRACE("qws_win=%d, surface_local=(%d,%d), global=(%d,%d)",
+              win->qws_id, 
+              wl_fixed_to_int(sx), wl_fixed_to_int(sy),
+              gx, gy);
+#endif
+
+    /* Do not the same event multiple times - Qt does not do 
+     * that as well. */
+    if (gx == pstate->gx && gy == pstate->gy)
+        return;
+
+    pstate->gx = gx;
+    pstate->gy = gy;
+
+    /* This seems to be a bit redundant? Yes, I know, but
+     * if we don't keep both positions updated, then we are
+     * going to unleash a bunch of very very weird edge cases. */
+    *state->qt_last_x = gx;
+    *state->qt_last_y = gy;
+
+    send_pointer_update_event(pstate, 0);
+}
+
 static void pointer_enter(void *data, struct wl_pointer *ptr,
                            uint32_t serial, struct wl_surface *surface,
                            wl_fixed_t sx, wl_fixed_t sy)
 {
+    qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_window_t *win = qwswl_surface_to_win(surface);
     assert(win);
-
-    /* zero-initialize to not have random (or stale during reallocation)
-     * leak into the new pointer context and produce very weird results */
-    qwswl_pointer_data_t *pointer_data =
-        calloc(1, sizeof(qwswl_pointer_data_t));
-    assert(pointer_data);
-
-    pointer_data->win = win;
-    wl_pointer_set_user_data(ptr, (void *) pointer_data);
-
-    update_pointer_position(pointer_data, sx, sy);
 
 #ifdef QWSWL_DEBUG_POINTER
     QWS_TRACE("surface=%p -> qws_win=%d, pos=(%d,%d)",
              (void *)surface, win->qws_id,
               wl_fixed_to_int(sx), wl_fixed_to_int(sy));
 #endif
+
+    /* zero-initialize before re-use to not have stale data 
+     * produce very weird results */
+    memset(&state->pointer_state, 0, sizeof(state->pointer_state));
+    state->pointer_state.win = win;
+
+    update_pointer_position(state, sx, sy);
 }
 
 static void pointer_leave(void *data, struct wl_pointer *ptr,
                             uint32_t serial, struct wl_surface *surface)
 {
-    qwswl_pointer_data_t *pointer_data = wl_pointer_get_user_data(ptr);
-    free(pointer_data);
-    wl_pointer_set_user_data(ptr, NULL);
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    state->pointer_state.win = NULL;
 
 #ifdef QWSWL_DEBUG_POINTER
     qwswl_window_t *win = qwswl_surface_to_win(surface);
-    assert(win);
+    if(!win)
+        return;
 
     QWS_TRACE("win %d", win->qws_id);
 #endif
@@ -116,22 +126,22 @@ static void pointer_leave(void *data, struct wl_pointer *ptr,
 static void pointer_motion(void *data, struct wl_pointer *ptr,
                              uint32_t time, wl_fixed_t sx, wl_fixed_t sy)
 {
-    qwswl_pointer_data_t *pointer_data =
-        (qwswl_pointer_data_t *) wl_pointer_get_user_data(ptr);
-    assert(pointer_data);
-    qwswl_window_t *win = pointer_data->win;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_pointer_state_t *pstate = &state->pointer_state;
+    assert(pstate);
+    qwswl_window_t *win = pstate->win;
     assert(win);
 
     int32_t gy = wl_fixed_to_int(sy);
 
-    if (gy <= 35 && pointer_data->button_state == QWS_BTN_LEFT 
+    if (gy <= 35 && pstate->button_state == QWS_BTN_LEFT
             && win->xdg_toplevel) {
         /* the pointer data exists, mouse button is pressed, this is a 
          * top-level window and we're inside the region that is normally
          * associated with the window decoration, then this is likely
          * an attempt to move the window. */
-        xdg_toplevel_move(win->xdg_toplevel, g_state.wl_seat,
-            pointer_data->serial);
+        xdg_toplevel_move(win->xdg_toplevel, state->wl_seat,
+            pstate->serial);
 
         /* Hide the event from the QWS client. We do not want it to realize
          * that a move operation is about to happen and start one on its
@@ -139,20 +149,17 @@ static void pointer_motion(void *data, struct wl_pointer *ptr,
         return;
     }
 
-    update_pointer_position(pointer_data, sx, sy);
+    update_pointer_position(state, sx, sy);
 }
 
 static void pointer_button(void *data, struct wl_pointer *ptr,
                              uint32_t serial, uint32_t time,
                              uint32_t button, uint32_t btn_state)
 {
-    qwswl_pointer_data_t *pointer_data =
-        (qwswl_pointer_data_t *) wl_pointer_get_user_data(ptr);
-    qwswl_window_t *win = pointer_data->win;
-    qwswl_client_t *cl = win->client;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_pointer_state_t *pstate = &state->pointer_state;
+    assert(pstate);
     int32_t qt_button = 0;
-
-    assert(pointer_data && win);
 
     /* Map Linux evdev button codes to Qt::MouseButton flags. */
     switch (button) {
@@ -170,50 +177,33 @@ static void pointer_button(void *data, struct wl_pointer *ptr,
              win->qws_id, qt_state);
 #endif
 
-    pointer_data->button_state = qt_state;
-    pointer_data->serial = serial;
+    pstate->button_state = qt_state;
+    pstate->serial = serial;
 
-    qws_packet_t *evt = qws_make_mouse_event(
-        win->qws_id, pointer_data->gx, pointer_data->gy, qt_state, 0, (int32_t)time);
-    assert(evt);
-
-    qws_trace_packet(cl->client_id, evt, true);
-    qws_write_packet(cl->fd, evt);
-
-    qws_packet_free(evt);
+    send_pointer_update_event(pstate, 0);
 }
 
 static void pointer_axis(void *data, struct wl_pointer *ptr,
                            uint32_t time, uint32_t axis, wl_fixed_t value)
 {
-    (void)data;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_pointer_state_t *pstate = &state->pointer_state;
+    assert(pstate);
+
     if (axis != WL_POINTER_AXIS_VERTICAL_SCROLL)
         return;
-
-    qwswl_pointer_data_t *pointer_data = wl_pointer_get_user_data(ptr);
-    if (!pointer_data)
-        return;
-
-    qwswl_window_t *win = pointer_data->win;
-    qwswl_client_t *cl = win->client;
 
     /* Wayland: positive = down; Qt delta: positive = up → negate.
      * Scale: ~10 Wayland units per notch, 120 Qt units per notch. */
     int32_t delta = -(int32_t)(wl_fixed_to_double(value) * 12.0);
 
 #ifdef QWSWL_DEBUG_POINTER_MOVEMENT
+    qwswl_window_t *win = pstate->win;
     QWS_TRACE("axis=vertical value=%.2f delta=%d -> qws_win=%d",
               wl_fixed_to_double(value), delta, win->qws_id);
 #endif
 
-    qws_packet_t *evt = qws_make_mouse_event(
-        win->qws_id, pointer_data->gx, pointer_data->gy,
-        0, delta, (int32_t)time);
-    assert(evt);
-
-    qws_trace_packet(cl->client_id, evt, true);
-    qws_write_packet(cl->fd, evt);
-    qws_packet_free(evt);
+    send_pointer_update_event(pstate, delta);
 }
 
 static void pointer_frame(void *data, struct wl_pointer *ptr)
@@ -233,78 +223,6 @@ const struct wl_pointer_listener pointer_listener = {
 /* ================================================================
  * Wayland keyboard listener → QWS key events
  * ================================================================ */
-
-static void keyboard_keymap(void *data, struct wl_keyboard *kbd,
-                              uint32_t format, int32_t fd, uint32_t size)
-{
-    assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
-    qwswl_state_t *state = (qwswl_state_t *)data;
-    qwswl_keyboard_data_t *kbd_data = malloc(sizeof(*kbd_data));
-    assert(kbd_data != NULL);
-
-    wl_keyboard_set_user_data(kbd, kbd_data);
-
-    char *map_shm = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-    assert(map_shm != MAP_FAILED);
-
-    kbd_data->xkb_keymap = xkb_keymap_new_from_string(
-        state->xkb_context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1,
-        XKB_KEYMAP_COMPILE_NO_FLAGS);
-    assert(kbd_data->xkb_keymap);
-    kbd_data->xkb_state = xkb_state_new(kbd_data->xkb_keymap);
-    assert(kbd_data->xkb_state);
-
-    munmap(map_shm, size);
-    close(fd);
-}
-
-static void keyboard_enter(void *data, struct wl_keyboard *kbd,
-                             uint32_t serial, struct wl_surface *surface,
-                             struct wl_array *keys)
-{
-    (void)data; (void)serial;
-    uint32_t *k;
-    qwswl_keyboard_data_t *kbd_data = wl_keyboard_get_user_data(kbd);
-    qwswl_window_t *win = qwswl_surface_to_win(surface);
-    assert(win);
-
-    kbd_data->win = win;
-
-    // QWS_TRACE("qws_win=%d", win->qws_id);
-
-    wl_array_for_each(k, keys) {
-        xkb_state_update_key(kbd_data->xkb_state, (*k) + 8, XKB_KEY_DOWN);
-    }
-    
-    qwswl_client_t *cl = win->client;
-    qws_packet_t *evt = qws_make_focus_event(win->qws_id, QWS_FOCUS_GAIN);
-    assert(evt);
-
-    qws_trace_packet(cl->client_id, evt, true);
-    qws_write_packet(cl->fd, evt);
-    qws_packet_free(evt);
-}
-
-static void keyboard_leave(void *data, struct wl_keyboard *kbd,
-                              uint32_t serial, struct wl_surface *surface)
-{
-    (void)data; (void)serial;
-    qwswl_keyboard_data_t *kbd_data = wl_keyboard_get_user_data(kbd);
-    qwswl_window_t *win = kbd_data->win;
-    assert(kbd_data && win);
-
-    // QWS_TRACE("qws_win=%d", win->qws_id);
-
-    qwswl_client_t *cl = win->client;
-    qws_packet_t *evt = qws_make_focus_event(win->qws_id, QWS_FOCUS_LOSE);
-    assert(evt);
-
-    qws_trace_packet(cl->client_id, evt, true);
-    qws_write_packet(cl->fd, evt);
-    qws_packet_free(evt);
-
-    kbd_data->win = NULL;
-}
 
 static uint32_t qwswl_xkb_modifiers(struct xkb_state *state)
 {
@@ -331,22 +249,104 @@ static uint32_t qwswl_xkb_modifiers(struct xkb_state *state)
     return mods;
 }
 
+ static void send_focus_event(qwswl_window_t *win, qws_focus_flag_t flag)
+{
+    qwswl_client_t *cl = win->client;
+    qws_packet_t *evt = qws_make_focus_event(win->qws_id, flag);
+    assert(evt);
+    qws_trace_packet(cl->client_id, evt, true);
+    qws_write_packet(cl->fd, evt);
+    qws_packet_free(evt);
+}
+
+static void send_key_event(qwswl_keyboard_state_t *kbd_state,
+                           int16_t unicode, uint32_t qt_key,
+                           bool is_press, bool auto_repeat)
+{
+    qwswl_window_t *win = kbd_state->win;
+    qwswl_client_t *cl  = win->client;
+
+    qws_packet_t *evt = qws_make_key_event(
+        win->qws_id, unicode, qt_key,
+        qwswl_xkb_modifiers(kbd_state->xkb_state), is_press, auto_repeat);
+    assert(evt);
+
+    qws_trace_packet(cl->client_id, evt, true);
+    qws_write_packet(cl->fd, evt);
+    qws_packet_free(evt);
+}
+
+static void keyboard_keymap(void *data, struct wl_keyboard *kbd,
+                              uint32_t format, int32_t fd, uint32_t size)
+{
+    assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
+
+    char *map_shm = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+    assert(map_shm != MAP_FAILED);
+
+    kbd_state->xkb_keymap = xkb_keymap_new_from_string(
+        state->xkb_context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1,
+        XKB_KEYMAP_COMPILE_NO_FLAGS);
+    assert(kbd_state->xkb_keymap);
+    kbd_state->xkb_state = xkb_state_new(kbd_state->xkb_keymap);
+    assert(kbd_state->xkb_state);
+
+    munmap(map_shm, size);
+    close(fd);
+}
+
+static void keyboard_enter(void *data, struct wl_keyboard *kbd,
+                             uint32_t serial, struct wl_surface *surface,
+                             struct wl_array *keys)
+{
+    (void)serial;
+    uint32_t *k;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
+    qwswl_window_t *win = qwswl_surface_to_win(surface);
+    assert(win);
+
+    kbd_state->win = win;
+
+    wl_array_for_each(k, keys) {
+        xkb_state_update_key(kbd_state->xkb_state, (*k) + 8, XKB_KEY_DOWN);
+    }
+
+    send_focus_event(win, QWS_FOCUS_GAIN);
+}
+
+static void keyboard_leave(void *data, struct wl_keyboard *kbd,
+                              uint32_t serial, struct wl_surface *surface)
+{
+    (void)serial;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
+    kbd_state->win = NULL;
+
+    qwswl_window_t *win = qwswl_surface_to_win(surface);
+    if (!win)
+        return;
+
+    send_focus_event(win, QWS_FOCUS_LOSE);
+}
+
 static void keyboard_key(void *data, struct wl_keyboard *kbd,
                            uint32_t serial, uint32_t time,
                            uint32_t key, uint32_t key_state)
 {
     (void)serial; (void)time;
-    qwswl_keyboard_data_t *kbd_data = wl_keyboard_get_user_data(kbd);
-    qwswl_window_t *win = kbd_data->win;
-    qwswl_client_t *cl = win->client;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
     bool is_press = key_state == WL_KEYBOARD_KEY_STATE_PRESSED;
-    uint32_t utf32 = xkb_state_key_get_utf32(kbd_data->xkb_state, key + 8);
+    uint32_t utf32 = xkb_state_key_get_utf32(kbd_state->xkb_state, key + 8);
     UChar utf16[2];
 
     // QWS_TRACE("evdev=%u utf32=%u %s -> qws_win=%d", key, utf32,
     //          is_press ? "press" : "release", win->qws_id);
 
-    xkb_state_update_key(kbd_data->xkb_state, key + 8,
+    xkb_state_update_key(kbd_state->xkb_state, key + 8,
         is_press ? XKB_KEY_DOWN : XKB_KEY_UP);
 
     {
@@ -358,14 +358,9 @@ static void keyboard_key(void *data, struct wl_keyboard *kbd,
         assert(U_SUCCESS(err) && utf16_len == 1);
     }
 
-    qws_packet_t *evt = qws_make_key_event(
-        win->qws_id, (int16_t) utf16[0], key,
-        qwswl_xkb_modifiers(kbd_data->xkb_state), is_press, false);
-    assert(evt);
+    int16_t  unicode = (int16_t) utf16[0];
 
-    qws_trace_packet(cl->client_id, evt, true);
-    qws_write_packet(cl->fd, evt);
-    qws_packet_free(evt);
+    send_key_event(kbd_state, unicode, key, is_press, false);
 }
 
 static void keyboard_modifiers(void *data, struct wl_keyboard *kbd,
@@ -375,11 +370,12 @@ static void keyboard_modifiers(void *data, struct wl_keyboard *kbd,
                                  uint32_t mods_locked,
                                  uint32_t group)
 {
-    qwswl_keyboard_data_t *kbd_data = wl_keyboard_get_user_data(kbd);
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
 
-    assert(kbd_data->xkb_state);
+    assert(kbd_state->xkb_state);
 
-    xkb_state_update_mask(kbd_data->xkb_state, mods_depressed,
+    xkb_state_update_mask(kbd_state->xkb_state, mods_depressed,
         mods_latched, mods_locked, group, group, group);
 }
 

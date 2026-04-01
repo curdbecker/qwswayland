@@ -1,12 +1,10 @@
 /*
- * proxy.h - QWSWayland proxy daemon command dispatch
+ * seat.h - QWSWayland proxy - seat event handling 
  * SPDX-License-Identifier: MIT
  */
 
-#ifndef SEATH_H 
-#define SEATH_H
-
-#include "window.h"
+#ifndef SEAT_H 
+#define SEAT_H
 
 #include <stdint.h>
 
@@ -14,25 +12,26 @@
 extern "C" {
 #endif
 
-/* Per-pointer tracking: allocated on enter, freed on leave */
+typedef struct qwswl_window qwswl_window_t;
+
+/* Per-pointer tracking. */
 typedef struct {
     qwswl_window_t *win;
     int32_t         gx;
     int32_t         gy;
     int32_t         button_state;
-    uint32_t         serial;
-} qwswl_pointer_data_t;
+    uint32_t        serial;
+} qwswl_pointer_state_t;
 
-
- /* Per-keyboard state: allocated on keymap event */
+ /* Per-keyboard state. */
 typedef struct {
     struct xkb_keymap *xkb_keymap;
     struct xkb_state  *xkb_state;
     qwswl_window_t    *win;
-} qwswl_keyboard_data_t;
+} qwswl_keyboard_state_t;
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* SEATH_H */
+#endif /* SEAT_H */
