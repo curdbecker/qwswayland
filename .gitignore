@@ -2,6 +2,7 @@
 build/
 out/
 builddir/
+builddir_cross/
 subprojects/*
 !subprojects/*.wrap
 
@@ -39,3 +40,10 @@ __MACOSX/
 *.swo
 *~
 .clangd/
+# Unfortunately, VSCode's code workspaces are pretty annoying...
+# Settings are being overwritten weirdly. And in general having
+# to create an entirely new workspace just when adding a folder
+# to the editor is quite frustrating...
+# Especially since only a single VSCode instance is apparently 
+# intended to be run per container.
+.vscode/*.code-workspace
