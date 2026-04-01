@@ -596,6 +596,9 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win)
     if (win->geometry.rects)
         free(win->geometry.rects);
 
+    if (win->visible_rects)
+        free(win->visible_rects);
+
     /* Release the permanently-attached client shm */
     qws_shm_detach(&win->client_shm.shm);
 
@@ -623,6 +626,11 @@ void qwswl_hide_window(qwswl_state_t *state, qwswl_window_t *win)
         free(win->geometry.rects);
     win->geometry.rects  = NULL;
     win->geometry.nrects = 0;
+
+    if (win->visible_rects)
+        free(win->visible_rects);
+    win->visible_rects  = NULL;
+    win->visible_nrects = 0;
 
     /* The client might decide to hide a window that we didn't even show yet,
      * so we might not even have a surface. There is nothing to do here then. */

@@ -9,6 +9,7 @@
 #include "client.h"
 #include "window.h"
 #include "qws_proto.h"
+#include "qws_trace.h"
 
 #include <stdio.h>
 #include <signal.h>
@@ -82,6 +83,13 @@ static void dump_window(const qwswl_window_t *win, int index)
 
     if (win->parent)
         fprintf(stderr, "       parent qws_id=%d\n", win->parent->qws_id);
+
+    if (g->rects && g->nrects > 0) {
+        fprintf(stderr, "       rects (%d):\n", g->nrects);
+        qws_trace_print_rects(stderr, g->rects, g->nrects);
+    } else {
+        fprintf(stderr, "       rects: none\n");
+    }
 }
 
 /* ================================================================

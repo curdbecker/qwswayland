@@ -243,13 +243,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             qwswl_hide_window(state, win);
         }
 
-        /* Send the region back as granted */
-        qws_packet_t *evt = qws_make_region_event(
-            cmd->window, 0 /* allocation */, rects, nrects);
-        qws_trace_packet(cl->client_id, evt, true);
-        qws_write_packet(cl->fd, evt);
-        
-        qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
+        /* Emit events for all changes that might have occurred on our 
+         * windows after the region change */
+        qwswl_update_regions(state, cl, win, send_region_event);
 
         break;
     }
@@ -294,11 +290,12 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             qwswl_find_or_allocate_window(cl, cmd->window);
         if (!win->wl_surface) {
             qwswl_create_window(state, win, 
-                qwswl_find_active_top_in_stack(cl), cmd->window_flags);
-            qwswl_stack_dump(cl);
+                qwswl_client_window_get_first_toplevel_below(cl, win), cmd->window_flags);
         }
 
+        qwswl_update_regions(state, cl, NULL, send_region_event);
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
+
         /* This might be not exactly what we want, since this will 
          * affect the entire surface and not just the ones that
          * have been specified by the client... Who knows? */
@@ -338,16 +335,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * larger with every subsequent move operation.
          */
         if (qwswl_move_window(state, win, cmd->dx, cmd->dy)) {
-            /* Send region ack with the translated (clipped) rects */
-            qws_packet_t *evt = qws_make_region_event(
-                cmd->window, 0, win->geometry.rects, win->geometry.nrects);
-            qws_trace_packet(cl->client_id, evt, true);
-            qws_write_packet(cl->fd, evt);
-            qws_packet_free(evt);
-
-            qwslock_unlock(cl->lock, QWS_LOCK_REGIONEVENT);
+            /* Only ack the move with region events if the move actually is valid
+             * on the region in the current state. */
+            qwswl_update_regions(state, cl, NULL, send_region_event);
         }
-
         break;
     }
     case QWS_CMD_REGION_DESTROY: {
@@ -357,6 +348,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qwswl_window_t *win = qwswl_find_or_allocate_window(cl, cmd->window);
         
         qwswl_destroy_window(state, win);
+        qwswl_update_regions(state, cl, NULL, send_region_event);
 
         break;
     }
@@ -369,25 +361,28 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         switch (cmd->altitude) {
             case QWS_ALTITUDE_STAYS_ON_TOP:
-                qwswl_stack_move_to_top(cl, win);
-                if (win->parent)
-                    wl_subsurface_place_above(win->wl_subsurface,
-                        win->parent->wl_surface);
+                win->on_top = true;
+                qwswl_stack_raise_window(cl, win);
                 break;
             case QWS_ALTITUDE_RAISE:
-                qwswl_stack_move_up(cl, win);
-                if (win->parent)
-                    wl_subsurface_place_above(win->wl_subsurface,
-                        win->parent->wl_surface);
+                qwswl_stack_raise_window(cl, win);
                 break;
             case QWS_ALTITUDE_LOWER:
-                qwswl_stack_move_down(cl, win);
-                if (win->parent)
-                    wl_subsurface_place_below(win->wl_subsurface,
-                        win->parent->wl_surface);
+                qwswl_stack_lower_window(cl, win);
                 break;
         }
 
+        if (win->parent)
+            qwswl_reorder_subsurfaces(cl, win->parent);
+
+        /* The region event is crucial if the window is not visible 
+         * yet, since without a region event, the client will never 
+         * event try to display anything. 
+         * 
+         * Therefore, we always have to emit a region event if
+         * for the given window if it is meant to be visible. */
+        qwswl_update_regions(state, cl, win, send_region_event);
+        
         break;
     }
 

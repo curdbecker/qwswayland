@@ -39,6 +39,11 @@ typedef struct qwswl_window {
     /* Geometry as known by the QWS client */
     qwswl_geometry_t     geometry;
 
+    /* Region actually visible for this window.
+     * geometry.rects holds what the client requested; these hold what is actually visible. */
+    qws_rect_t          *visible_rects;
+    int32_t              visible_nrects;
+
     /* Wayland-side pixel buffer: anonymous mmap fd + wl_buffer */
     struct {
         struct wl_buffer *buffer;
@@ -65,6 +70,7 @@ typedef struct qwswl_window {
     char                 *caption;
     uint8_t              opacity;
     qws_window_flags_t   win_flags;
+    bool                 on_top;   /* true while window holds STAYS_ON_TOP altitude */
 } qwswl_window_t;
 
 /* Allocate a window with a caller-supplied ID (for lazy/on-demand creation). */

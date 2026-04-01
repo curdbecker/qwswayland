@@ -46,17 +46,35 @@ int32_t qwswl_allocate_ids(qwswl_client_t *client, int32_t count);
 /* Find window by ID; if not in map, lazily allocate and push to stack.
  * Mirrors Qt QWSServerPrivate::findWindow(id, client). */
 qwswl_window_t *qwswl_find_or_allocate_window(qwswl_client_t *client, int32_t qws_id);
-void qwswl_add_window_to_client(qwswl_client_t *client, int32_t qws_id, qwswl_window_t *win);
+void qwswl_add_window_to_client(qwswl_client_t *client, qwswl_window_t *win);
 void qwswl_remove_window_from_client(qwswl_client_t *client, int32_t qws_id);
 
-qwswl_window_t *qwswl_find_top_toplevel_in_stack(qwswl_client_t *client);
-qwswl_window_t *qwswl_find_active_top_in_stack(qwswl_client_t *client);
+qwswl_window_t *qwswl_client_window_get_first_toplevel_below(qwswl_client_t *client, qwswl_window_t *win);
 
-void qwswl_stack_move_to_top(qwswl_client_t *client, qwswl_window_t *win);
-void qwswl_stack_move_up(qwswl_client_t *client, qwswl_window_t *win);
-void qwswl_stack_move_down(qwswl_client_t *client, qwswl_window_t *win);
+/* Raise win to top of its zone (front if on_top, else after on_top block).
+ * Qt: raiseWindow — used for both Raise and StaysOnTop altitudes. */
+void qwswl_stack_raise_window(qwswl_client_t *client, qwswl_window_t *win);
+/* Move win to the absolute back of the stack. Qt: lowerWindow. */
+void qwswl_stack_lower_window(qwswl_client_t *client, qwswl_window_t *win);
 void qwswl_stack_dump(const qwswl_client_t *client);
 
+/* Re-establish Wayland subsurface Z-order for all children of parent
+ * to match the logical window stack.  Call after any raise/lower. */
+void qwswl_reorder_subsurfaces(qwswl_client_t *cl, qwswl_window_t *parent);
+
+/* Callback type used by qwswl_update_regions to emit a QWSRegionEvent::Allocation.
+ * The implementation (send_region_event in proxy.c) is responsible for sending
+ * the packet and unlocking the client lock. */
+typedef void (*qwswl_region_event_cb_t)(qwswl_client_t *cl, qwswl_window_t *win,
+                                         qws_rect_t *rects, int32_t nrects);
+
+/* Walk the client's window stack and emit a QWSRegionEvent::Allocation to every
+ * window whose allocated region changed.  requesting_win, if non-NULL, always
+ * receives an event even when its allocation is unchanged (the client has already
+ * reset its clip region and is blocked waiting for the ack). */
+void qwswl_update_regions(qwswl_state_t *state, qwswl_client_t *cl,
+                          qwswl_window_t *requesting_win,
+                          qwswl_region_event_cb_t emit);
 
 #ifdef __cplusplus
 }

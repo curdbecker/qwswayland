@@ -7,6 +7,7 @@
 
 #include "client.h"
 #include "window.h"
+#include "qws_rect.h"
 #include "qws_trace.h"
 
 #include <stdlib.h>
@@ -69,27 +70,47 @@ void qwswl_destroy_client(qwswl_state_t *state, qwswl_client_t *cl)
     free(cl);
 }
 
-qwswl_window_t *
-qwswl_lookup_window_on_client(qwswl_client_t *client, int32_t qws_id)
+/* The window stack is split into two logical zones (mirrors Qt4 QWS):
+ *
+ *   [ front/top ]  on-top windows  |  normal windows  [ back/bottom ]
+ *
+ * on_top windows always live in the front zone; normal windows behind them.
+ * New windows are inserted at the boundary — after all on_top windows. */
+static void push_window_to_stack(qwswl_client_t *client, qwswl_window_t *win)
 {
-    assert(client && qws_id > 0);
-    qwswl_window_t * const *win = 
-        qwswl_window_map_t_at(&client->window_map, qws_id);
-    if (win) {
-        assert(*win);
-        return *win;
+    /* Insert before the first non-on_top window (= after the on_top zone). */
+    for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
+        if (!(*it.ref)->on_top) {
+            qwswl_window_stack_t_insert_at(&client->window_stack, it, win);
+            return;
+        }
     }
-    return NULL;
+    /* Stack is empty or all windows are on_top: append. */
+    qwswl_window_stack_t_push_back(&client->window_stack, win);
 }
 
-void qwswl_add_window_to_client(qwswl_client_t *client,
-    int32_t qws_id, qwswl_window_t *win)
+/* Mirrors Qt QWSServerPrivate::findWindow(id, client):
+ * if the window is unknown, lazily allocate it and place it on the stack. */
+qwswl_window_t *
+qwswl_find_or_allocate_window(qwswl_client_t *client, int32_t qws_id)
 {
-    assert(client && win && qws_id > 0);
+    assert(client && qws_id > 0);
+    qwswl_window_map_t_iter p = qwswl_window_map_t_find(&client->window_map, qws_id);
+    if (p.ref) {
+        assert (p.ref);
+        return p.ref->second;
+    }
+    qwswl_window_t *win = qwswl_allocate_window_with_id(client, qws_id);
+    push_window_to_stack(client, win);
+    return win;
+}
+
+void qwswl_add_window_to_client(qwswl_client_t *client, qwswl_window_t *win)
+{
+    assert(client && win && win->qws_id > 0);
     qwswl_window_map_t_result result =
-        qwswl_window_map_t_insert(&client->window_map, qws_id, win);
+        qwswl_window_map_t_insert(&client->window_map, win->qws_id, win);
     assert(result.inserted);
-    qwswl_window_stack_t_push_back(&client->window_stack, win);
 }
 
 void qwswl_remove_window_from_client(qwswl_client_t *client,
@@ -97,7 +118,8 @@ void qwswl_remove_window_from_client(qwswl_client_t *client,
 {
     assert(client && qws_id > 0);
     qwswl_window_map_t_iter mit = qwswl_window_map_t_find(&client->window_map, qws_id);
-    assert(mit.ref);
+    if (!mit.ref)
+        return;
 
     qwswl_window_t *win = mit.ref->second;
     qwswl_window_map_t_erase_at(&client->window_map, mit);
@@ -110,28 +132,49 @@ void qwswl_remove_window_from_client(qwswl_client_t *client,
     }
 }
 
-qwswl_window_t *qwswl_find_top_toplevel_in_stack(qwswl_client_t *client)
+qwswl_window_t *qwswl_client_window_get_first_toplevel_below(
+    qwswl_client_t *client, qwswl_window_t *win)
 {
+    bool next = false;
     for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
-        qwswl_window_t *win = *it.ref;
-        if (win->win_flags != -1 && QWS_IS_TOPLEVEL_TYPE(win->win_flags))
-            return win;
+        qwswl_window_t *it_win = *it.ref;
+        if (next && it_win->xdg_surface)
+            return *it.ref;
+        if (*it.ref == win)
+            next = true;
     }
     return NULL;
 }
 
-qwswl_window_t *qwswl_find_active_top_in_stack(qwswl_client_t *client)
+/* Raise win to the top of its zone (mirrors Qt QWSServerPrivate::raiseWindow):
+ *   on_top windows  → absolute front of the stack
+ *   normal windows  → first position after the on_top zone */
+void qwswl_stack_raise_window(qwswl_client_t *client, qwswl_window_t *win)
 {
+    /* Remove from current position. */
     for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
-        qwswl_window_t *win = *it.ref;
-        if (win->win_flags != -1 && win->geometry.height > 0 
-            && win->geometry.width > 0)
-            return win;
+        if (*it.ref == win) {
+            qwswl_window_stack_t_erase_at(&client->window_stack, it);
+            break;
+        }
     }
-    return NULL;
+    if (win->on_top) {
+        qwswl_window_stack_t_push_front(&client->window_stack, win);
+        return;
+    }
+    /* Normal window: insert before the first non-on_top window. */
+    for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
+        if (!(*it.ref)->on_top) {
+            qwswl_window_stack_t_insert_at(&client->window_stack, it, win);
+            return;
+        }
+    }
+    qwswl_window_stack_t_push_back(&client->window_stack, win);
 }
 
-void qwswl_stack_move_to_top(qwswl_client_t *client, qwswl_window_t *win)
+/* Lower win to the absolute back of the stack (mirrors Qt lowerWindow).
+ * Note: this is a full move-to-bottom, not a one-step swap. */
+void qwswl_stack_lower_window(qwswl_client_t *client, qwswl_window_t *win)
 {
     for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
         if (*it.ref == win) {
@@ -139,38 +182,42 @@ void qwswl_stack_move_to_top(qwswl_client_t *client, qwswl_window_t *win)
             break;
         }
     }
-    qwswl_window_stack_t_push_front(&client->window_stack, win);
+    qwswl_window_stack_t_push_back(&client->window_stack, win);
 }
 
-void qwswl_stack_move_up(qwswl_client_t *client, qwswl_window_t *win)
+/* Re-establish Wayland subsurface Z-order for all children of parent to match
+ * the logical window stack.  Must be called after any raise/lower operation.
+ *
+ * Wayland subsurface ordering uses wl_subsurface_place_above(sub, sibling),
+ * which positions sub just above sibling in the parent's composite order.
+ * We build the chain from the bottom up:
+ *
+ *   children[n-1] placed above parent->wl_surface  (bottommost sibling)
+ *   children[n-2] placed above children[n-1]
+ *   ...
+ *   children[0]   placed above children[1]          (topmost sibling)
+ */
+#define WINDOW_MAX_CHILDREN 128
+void qwswl_reorder_subsurfaces(qwswl_client_t *cl, qwswl_window_t *parent)
 {
-    /* "up" = toward front (higher z-order); swap with predecessor */
-    qwswl_window_t **prev_ref = NULL;
-    for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
-        if (*it.ref == win) {
-            if (!prev_ref) return;   /* already at top (front) */
-            qwswl_window_t *tmp = *it.ref;
-            *it.ref   = *prev_ref;
-            *prev_ref = tmp;
-            return;
-        }
-        prev_ref = it.ref;
+    if (!parent || !parent->wl_surface) return;
+
+    /* Collect children of parent in stack order (topmost first). */
+    qwswl_window_t *children[WINDOW_MAX_CHILDREN];
+    int n = 0;
+    for (c_each(it, qwswl_window_stack_t, cl->window_stack)) {
+        qwswl_window_t *w = *it.ref;
+        assert(n < WINDOW_MAX_CHILDREN);
+        if (w->parent == parent && w->wl_subsurface)
+            children[n++] = w;
     }
-}
+    if (n == 0) 
+        return;
 
-void qwswl_stack_move_down(qwswl_client_t *client, qwswl_window_t *win)
-{
-    /* "down" = toward back (lower z-order); swap with successor */
-    for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
-        if (*it.ref == win) {
-            qwswl_window_stack_t_iter next = it;
-            qwswl_window_stack_t_next(&next);
-            if (!next.ref) return;   /* already at bottom (back) */
-            qwswl_window_t *tmp = *it.ref;
-            *it.ref   = *next.ref;
-            *next.ref = tmp;
-            return;
-        }
+    struct wl_surface *below = parent->wl_surface;
+    for (int i = n - 1; i >= 0; i--) {
+        wl_subsurface_place_above(children[i]->wl_subsurface, below);
+        below = children[i]->wl_surface;
     }
 }
 
@@ -182,10 +229,87 @@ void qwswl_stack_dump(const qwswl_client_t *client)
     int i = 0;
     for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
         const qwswl_window_t *win = *it.ref;
-        if (win->win_flags != -1)
-            QWS_TRACE("  [%d] qws_id=%-4d flags=0x%08x%s",
-                      i++, win->qws_id, (unsigned)win->win_flags,
-                      win->win_flags != -1 && QWS_IS_TOPLEVEL_TYPE(win->win_flags)
-                          ? " (toplevel)" : "");
+        QWS_TRACE("  [%d] qws_id=%-4d flags=0x%08x%s%s",
+                  i++, win->qws_id, (unsigned)win->win_flags,
+                  win->win_flags != -1 && QWS_IS_TOPLEVEL_TYPE(win->win_flags)
+                      ? " (toplevel)" : "",
+                  win->on_top ? " ON_TOP" : "");
     }
+}
+
+void qwswl_update_regions(qwswl_state_t *state, qwswl_client_t *cl,
+                           qwswl_window_t *requesting_win,
+                           qwswl_region_event_cb_t emit)
+{
+    /* Accumulate opaque rects of all windows above the current one.
+     * Built incrementally; grown with realloc. */
+    qws_rect_t *blocking   = NULL;
+    int32_t     n_blocking = 0;
+    bool event_for_requesting_win_sent;
+
+    for (c_each(it, qwswl_window_stack_t, cl->window_stack)) {
+        qwswl_window_t *win = *it.ref;
+
+        /* Compute the new allocation for this window. */
+        qws_rect_t *new_alloc = NULL;
+        int32_t     n_new     = 0;
+
+        if (win->geometry.nrects > 0) {
+            for (int32_t i = 0; i < win->geometry.nrects; i++) {
+                int32_t n_sub = 0;
+                qws_rect_t *sub = qws_rect_subtract(
+                    &win->geometry.rects[i], 1,
+                    blocking, n_blocking, &n_sub);
+                if (n_sub > 0) {
+                    new_alloc = realloc(new_alloc,
+                        (size_t)(n_new + n_sub) * sizeof(qws_rect_t));
+                    memcpy(new_alloc + n_new, sub,
+                        (size_t)n_sub * sizeof(qws_rect_t));
+                    n_new += n_sub;
+                }
+                free(sub);
+            }
+        }
+
+        qws_clip_rects(new_alloc, n_new, 
+            state->screen_width - 1, state->screen_height - 1);
+
+        /* The requesting window might need to get always an event if the client has 
+         * already reset its clip region to empty and will not try to display anything
+         * without an explicit ack.
+         * All other windows only get an event when the allocation changed. */
+        bool force   = (win == requesting_win);
+        bool changed = (n_new != win->visible_nrects)
+                    || (n_new > 0 && memcmp(new_alloc, win->visible_rects,
+                                            (size_t)n_new * sizeof(qws_rect_t)) != 0);
+        if (force)
+            event_for_requesting_win_sent = true;
+
+        if (force || changed) {
+            free(win->visible_rects);
+            win->visible_rects  = new_alloc;
+            win->visible_nrects = n_new;
+            emit(cl, win, new_alloc, n_new);
+        } else {
+            free(new_alloc);
+        }
+
+        /* Opaque windows occlude everything below them. */
+        if (win->opacity == 255 && n_new > 0) {
+            qws_rect_t *tmp = realloc(blocking,
+                (size_t)(n_blocking + win->visible_nrects) * sizeof(qws_rect_t));
+            if (tmp) {
+                blocking = tmp;
+                memcpy(blocking + n_blocking, win->visible_rects,
+                       (size_t)win->visible_nrects * sizeof(qws_rect_t));
+                n_blocking += win->visible_nrects;
+            }
+        }
+    }
+
+    if (requesting_win && !event_for_requesting_win_sent)
+        emit(cl, requesting_win, requesting_win->visible_rects, 
+            requesting_win->visible_nrects);
+
+    free(blocking);
 }
