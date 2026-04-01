@@ -56,7 +56,7 @@
         {
             "label": "trace: 2. Proxy",
             "type": "shell",
-            "command": "${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1",
+            "command": "${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1 -v brief",
             "options": {
                 "cwd": "${workspaceFolder}"
             },

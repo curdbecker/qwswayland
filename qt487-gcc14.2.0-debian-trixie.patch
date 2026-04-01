@@ -1,0 +1,229 @@
+diff --git a/src/corelib/global/qglobal.h b/src/corelib/global/qglobal.h
+index 20d88328..7d115243 100644
+--- a/src/corelib/global/qglobal.h
++++ b/src/corelib/global/qglobal.h
+@@ -2483,21 +2483,9 @@ typedef uint Flags;
+ #endif /* Q_NO_TYPESAFE_FLAGS */
+
+ #if defined(Q_CC_GNU) && !defined(Q_CC_INTEL) && !defined(Q_CC_RVCT)
+-/* make use of typeof-extension */
+-template <typename T>
+-class QForeachContainer {
+-public:
+-    inline QForeachContainer(const T& t) : c(t), brk(0), i(c.begin()), e(c.end()) { }
+-    const T c;
+-    int brk;
+-    typename T::const_iterator i, e;
+-};
+
+ #define Q_FOREACH(variable, container)                                \
+-for (QForeachContainer<__typeof__(container)> _container_(container); \
+-     !_container_.brk && _container_.i != _container_.e;              \
+-     __extension__  ({ ++_container_.brk; ++_container_.i; }))                       \
+-    for (variable = *_container_.i;; __extension__ ({--_container_.brk; break;}))
++for (variable: container)
+
+ #else
+
+diff --git a/src/corelib/concurrent/qfutureinterface.h b/src/corelib/concurrent/qfutureinterface.h
+index f152312a..161b6bab 100644
+--- a/src/corelib/concurrent/qfutureinterface.h
++++ b/src/corelib/concurrent/qfutureinterface.h
+@@ -282,10 +282,10 @@ template <>
+ class QFutureInterface<void> : public QFutureInterfaceBase
+ {
+ public:
+-    QFutureInterface<void>(State initialState = NoState)
++    QFutureInterface(State initialState = NoState)
+         : QFutureInterfaceBase(initialState)
+     { }
+-    QFutureInterface<void>(const QFutureInterface<void> &other)
++    QFutureInterface(const QFutureInterface<void> &other)
+         : QFutureInterfaceBase(other)
+     { }
+
+diff --git a/src/corelib/concurrent/qtconcurrentthreadengine.h b/src/corelib/concurrent/qtconcurrentthreadengine.h
+index 1fb41b35..ea204d1c 100644
+--- a/src/corelib/concurrent/qtconcurrentthreadengine.h
++++ b/src/corelib/concurrent/qtconcurrentthreadengine.h
+@@ -257,7 +257,7 @@ template <>
+ class ThreadEngineStarter<void> : public ThreadEngineStarterBase<void>
+ {
+ public:
+-    ThreadEngineStarter<void>(ThreadEngine<void> *_threadEngine)
++    ThreadEngineStarter(ThreadEngine<void> *_threadEngine)
+     :ThreadEngineStarterBase<void>(_threadEngine) {}
+
+     void startBlocking()
+
+diff --git a/examples/graphicsview/flowlayout/flowlayout.cpp b/examples/graphicsview/flowlayout/flowlayout.cpp
+index 588a7fbf..97ba4040 100644
+--- a/examples/graphicsview/flowlayout/flowlayout.cpp
++++ b/examples/graphicsview/flowlayout/flowlayout.cpp
+@@ -142,8 +142,7 @@ QSizeF FlowLayout::minSize(const QSizeF &constraint) const
+     } else if (constraint.height() >= 0) {  // width for height?
+         // not supported
+     } else {
+-        QGraphicsLayoutItem *item;
+-        foreach (item, m_items)
++        foreach (QGraphicsLayoutItem *item, m_items)
+             size = size.expandedTo(item->effectiveSizeHint(Qt::MinimumSize));
+         size += QSize(left + right, top + bottom);
+     }
+@@ -155,10 +154,9 @@ QSizeF FlowLayout::prefSize() const
+     qreal left, right;
+     getContentsMargins(&left, 0, &right, 0);
+ 
+-    QGraphicsLayoutItem *item;
+     qreal maxh = 0;
+     qreal totalWidth = 0;
+-    foreach (item, m_items) {
++    foreach (QGraphicsLayoutItem *item, m_items) {
+         if (totalWidth > 0)
+             totalWidth += spacing(Qt::Horizontal);
+         QSizeF pref = item->effectiveSizeHint(Qt::PreferredSize);
+@@ -175,10 +173,9 @@ QSizeF FlowLayout::prefSize() const
+ 
+ QSizeF FlowLayout::maxSize() const
+ {
+-    QGraphicsLayoutItem *item;
+     qreal totalWidth = 0;
+     qreal totalHeight = 0;
+-    foreach (item, m_items) {
++    foreach (QGraphicsLayoutItem *item, m_items) {
+         if (totalWidth > 0)
+             totalWidth += spacing(Qt::Horizontal);
+         if (totalHeight > 0)
+diff --git a/examples/graphicsview/portedcanvas/canvas.cpp b/examples/graphicsview/portedcanvas/canvas.cpp
+index 2b369ce9..50d7bf72 100644
+--- a/examples/graphicsview/portedcanvas/canvas.cpp
++++ b/examples/graphicsview/portedcanvas/canvas.cpp
+@@ -157,12 +157,11 @@ void EdgeItem::setToPoint( int x, int y )
+ QVariant NodeItem::itemChange(GraphicsItemChange change, const QVariant &value)
+ {
+     if (change == ItemPositionHasChanged) {
+-        EdgeItem *edge;
+-        foreach(edge, inList) {
++        foreach(EdgeItem *edge, inList) {
+             edge->setToPoint( int(x()), int(y()) );
+         }
+ 
+-        foreach(edge, outList) {
++        foreach(EdgeItem *edge, outList) {
+             edge->setFromPoint( int(x()), int(y()) );
+         }
+     }
+diff --git a/examples/itemviews/addressbook/addresswidget.cpp b/examples/itemviews/addressbook/addresswidget.cpp
+index b059aa11..dd467328 100644
+--- a/examples/itemviews/addressbook/addresswidget.cpp
++++ b/examples/itemviews/addressbook/addresswidget.cpp
+@@ -100,12 +100,12 @@ void AddressWidget::editEntry()
+     QItemSelectionModel *selectionModel = temp->selectionModel();
+ 
+     QModelIndexList indexes = selectionModel->selectedRows();
+-    QModelIndex index, i;        
++    QModelIndex i;
+     QString name;
+     QString address;
+     int row = -1;
+ 
+-    foreach (index, indexes) {
++    foreach (QModelIndex index, indexes) {
+         row = proxy->mapToSource(index).row();
+         i = table->index(row, 0, QModelIndex());
+         QVariant varName = table->data(i, Qt::DisplayRole);
+@@ -143,9 +143,8 @@ void AddressWidget::removeEntry()
+     QItemSelectionModel *selectionModel = temp->selectionModel();
+     
+     QModelIndexList indexes = selectionModel->selectedRows();
+-    QModelIndex index;
+ 
+-    foreach (index, indexes) {
++    foreach (QModelIndex index, indexes) {
+         int row = proxy->mapToSource(index).row();
+         table->removeRows(row, 1, QModelIndex());
+     }
+diff --git a/examples/layouts/flowlayout/flowlayout.cpp b/examples/layouts/flowlayout/flowlayout.cpp
+index d751e8c9..8092b02c 100644
+--- a/examples/layouts/flowlayout/flowlayout.cpp
++++ b/examples/layouts/flowlayout/flowlayout.cpp
+@@ -146,8 +146,7 @@ QSize FlowLayout::sizeHint() const
+ QSize FlowLayout::minimumSize() const
+ {
+     QSize size;
+-    QLayoutItem *item;
+-    foreach (item, itemList)
++    foreach (QLayoutItem *item, itemList)
+         size = size.expandedTo(item->minimumSize());
+ 
+     size += QSize(2*margin(), 2*margin());
+@@ -167,8 +166,7 @@ int FlowLayout::doLayout(const QRect &rect, bool testOnly) const
+ //! [9]
+ 
+ //! [10]
+-    QLayoutItem *item;
+-    foreach (item, itemList) {
++    foreach (QLayoutItem *item, itemList) {
+         QWidget *wid = item->widget();
+         int spaceX = horizontalSpacing();
+         if (spaceX == -1)
+diff --git a/examples/richtext/orderform/mainwindow.cpp b/examples/richtext/orderform/mainwindow.cpp
+index 0d2b24b0..1f3ef262 100644
+--- a/examples/richtext/orderform/mainwindow.cpp
++++ b/examples/richtext/orderform/mainwindow.cpp
+@@ -109,8 +109,7 @@ void MainWindow::createLetter(const QString &name, const QString &address,
+     cursor.setPosition(topFrame->lastPosition());
+ 
+     cursor.insertText(name, textFormat);
+-    QString line;
+-    foreach (line, address.split("\n")) {
++    foreach (QString line, address.split("\n")) {
+         cursor.insertBlock();
+         cursor.insertText(line);
+     }
+diff --git a/examples/widgets/charactermap/mainwindow.cpp b/examples/widgets/charactermap/mainwindow.cpp
+index 4f0f281d..8696068d 100644
+--- a/examples/widgets/charactermap/mainwindow.cpp
++++ b/examples/widgets/charactermap/mainwindow.cpp
+@@ -133,8 +133,7 @@ void MainWindow::findStyles(const QFont &font)
+ //! [7]
+ 
+ //! [8]
+-    QString style;
+-    foreach (style, fontDatabase.styles(font.family()))
++    foreach (QString style, fontDatabase.styles(font.family()))
+         styleCombo->addItem(style);
+ 
+     int styleIndex = styleCombo->findText(currentItem);
+@@ -153,15 +152,14 @@ void MainWindow::findSizes(const QFont &font)
+     sizeCombo->blockSignals(true);
+     sizeCombo->clear();
+ 
+-    int size;
+     if(fontDatabase.isSmoothlyScalable(font.family(), fontDatabase.styleString(font))) {
+-        foreach(size, QFontDatabase::standardSizes()) {
++        foreach(int size, QFontDatabase::standardSizes()) {
+             sizeCombo->addItem(QVariant(size).toString());
+             sizeCombo->setEditable(true);
+         }
+ 
+     } else {
+-        foreach(size, fontDatabase.smoothSizes(font.family(), fontDatabase.styleString(font))) {
++        foreach(int size, fontDatabase.smoothSizes(font.family(), fontDatabase.styleString(font))) {
+             sizeCombo->addItem(QVariant(size).toString());
+             sizeCombo->setEditable(false);
+         }
+diff --git a/src/gui/graphicsview/qgraphicsanchorlayout_p.cpp b/src/gui/graphicsview/qgraphicsanchorlayout_p.cpp
+index 0fedf110..89bd59ea 100644
+--- a/src/gui/graphicsview/qgraphicsanchorlayout_p.cpp
++++ b/src/gui/graphicsview/qgraphicsanchorlayout_p.cpp
+@@ -1951,8 +1951,7 @@ void QGraphicsAnchorLayoutPrivate::removeVertex(QGraphicsLayoutItem *item, Qt::A
+     if (AnchorVertex *v = internalVertex(item, edge)) {
+         Graph<AnchorVertex, AnchorData> &g = graph[edgeOrientation(edge)];
+         const QList<AnchorVertex *> allVertices = graph[edgeOrientation(edge)].adjacentVertices(v);
+-        AnchorVertex *v2;
+-        foreach (v2, allVertices) {
++        foreach(AnchorVertex *v2, allVertices) {
+             g.removeEdge(v, v2);
+             removeInternalVertex(item, edge);
+             removeInternalVertex(v2->m_item, v2->m_edge);
