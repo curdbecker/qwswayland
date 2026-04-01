@@ -30,13 +30,20 @@
  * Client management
  * ================================================================ */
 
+int32_t qwswl_allocate_ids(qwswl_client_t *client, int32_t count)
+{
+    assert(client && count > 0);
+    int32_t first_id = client->next_window_id + 1;
+    client->next_window_id += count;
+    return first_id;
+}
+
 qwswl_client_t *qwswl_create_client(int fd, int32_t id)
 {
     qwswl_client_t *cl = calloc(1, sizeof(*cl));
     assert(cl != NULL);
     cl->fd = fd;
     cl->client_id = id;
-    cl->focused_window_id = -1;
     cl->next_window_id = cl->client_id * 1000;
     qws_reader_init(&cl->reader, true);
     qwswl_window_map_t_init();
@@ -180,23 +187,5 @@ void qwswl_stack_dump(const qwswl_client_t *client)
                       i++, win->qws_id, (unsigned)win->win_flags,
                       win->win_flags != -1 && QWS_IS_TOPLEVEL_TYPE(win->win_flags)
                           ? " (toplevel)" : "");
-    }
-}
-
-void qwswl_set_window_focus_on_client(qwswl_client_t *client,
-    int32_t win_id, qws_focus_flag_t flag)
-{
-    switch (flag) {
-    case QWS_FOCUS_GAIN:
-        // assert(client->focused_window_id == -1 || 
-            // client->focused_window_id == win_id);
-        client->focused_window_id = win_id;
-        break;
-    case QWS_FOCUS_LOSE:
-        // assert(client->focused_window_id == win_id);
-        client->focused_window_id = -1;
-        break;
-    default:
-        assert(false);
     }
 }

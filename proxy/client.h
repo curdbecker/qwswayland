@@ -28,10 +28,8 @@ typedef struct qwswl_client {
     qws_reader_t        reader;        /* incremental packet parser */
 
     qwswl_window_map_t   window_map;
-    qwswl_window_stack_t window_stack;  /* insertion-ordered list of windows */
+    qwswl_window_stack_t window_stack;
     int32_t              next_window_id;
-
-    int32_t             focused_window_id;
 
     /* Per-client lock (3 semaphores: BackingStore, Communication, RegionEvent) */
     qwslock_t         *lock;
@@ -41,7 +39,13 @@ qwswl_client_t *qwswl_create_client(int fd, int32_t id);
 
 void qwswl_destroy_client(qwswl_state_t *state, qwswl_client_t *client);
 
-qwswl_window_t *qwswl_lookup_window_on_client(qwswl_client_t *client, int32_t qws_id);
+/* Allocate count contiguous IDs, advancing next_window_id.
+ * Returns the first ID in the allocated range. */
+int32_t qwswl_allocate_ids(qwswl_client_t *client, int32_t count);
+
+/* Find window by ID; if not in map, lazily allocate and push to stack.
+ * Mirrors Qt QWSServerPrivate::findWindow(id, client). */
+qwswl_window_t *qwswl_find_or_allocate_window(qwswl_client_t *client, int32_t qws_id);
 void qwswl_add_window_to_client(qwswl_client_t *client, int32_t qws_id, qwswl_window_t *win);
 void qwswl_remove_window_from_client(qwswl_client_t *client, int32_t qws_id);
 
@@ -53,7 +57,6 @@ void qwswl_stack_move_up(qwswl_client_t *client, qwswl_window_t *win);
 void qwswl_stack_move_down(qwswl_client_t *client, qwswl_window_t *win);
 void qwswl_stack_dump(const qwswl_client_t *client);
 
-void qwswl_set_window_focus_on_client(qwswl_client_t *client, int32_t win_id, qws_focus_flag_t flag);
 
 #ifdef __cplusplus
 }

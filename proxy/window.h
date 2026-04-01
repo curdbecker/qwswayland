@@ -65,11 +65,10 @@ typedef struct qwswl_window {
     char                 *caption;
     uint8_t              opacity;
     qws_window_flags_t   win_flags;
-    bool                 fixed;
 } qwswl_window_t;
 
-/* Allocate data strctures to collect information about a QWS window.*/
-qwswl_window_t *qwswl_allocate_window(qwswl_client_t *client);
+/* Allocate a window with a caller-supplied ID (for lazy/on-demand creation). */
+qwswl_window_t *qwswl_allocate_window_with_id(qwswl_client_t *client, int32_t qws_id);
 /* Create a Wayland-backed QWS window.*/
 void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win, qwswl_window_t *parent,
     qws_window_flags_t window_flags);

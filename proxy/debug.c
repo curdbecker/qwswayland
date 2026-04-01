@@ -90,8 +90,8 @@ static void dump_window(const qwswl_window_t *win, int index)
 
 static void dump_client(const qwswl_client_t *client)
 {
-    fprintf(stderr, "client %d  fd=%d  focused_window=%d  windows=%td\n",
-            client->client_id, client->fd, client->focused_window_id,
+    fprintf(stderr, "client %d  fd=%d  windows=%td\n",
+            client->client_id, client->fd,
             qwswl_window_stack_t_count(&client->window_stack));
     int i = 0;
     for (c_each(it, qwswl_window_stack_t, client->window_stack))

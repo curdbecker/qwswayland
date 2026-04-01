@@ -496,24 +496,20 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
  * Window management
  * ================================================================ */
 
-qwswl_window_t *qwswl_allocate_window(qwswl_client_t *client)
+qwswl_window_t *qwswl_allocate_window_with_id(qwswl_client_t *client, int32_t qws_id)
 {
-    int32_t qws_id = ++client->next_window_id;
-
-    qwswl_window_t *win= calloc(1, sizeof(*win));
+    qwswl_window_t *win = calloc(1, sizeof(*win));
     assert(win);
 
-    win->client = client;
-    win->qws_id = qws_id;
+    win->client    = client;
+    win->qws_id    = qws_id;
     win->win_flags = -1;
-    win->fixed = false;
-    // window is opaque by default
-    win->opacity = 255;
+    win->opacity   = 255;   /* opaque by default */
 
-    qwswl_add_window_to_client(client, qws_id, win);
+    qwswl_add_window_to_client(client, win);
 
     fprintf(stderr, "[qwswayland] Allocated window %d for client %d\n",
-            win->qws_id, client->client_id);
+            qws_id, client->client_id);
 
     return win;
 }

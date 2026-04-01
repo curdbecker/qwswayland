@@ -64,11 +64,8 @@ static void xdg_output_logical_size(void *data,
     QWS_TRACE("xdg_output: logical_size %dx%d", width, height);
 
     if (state->screen_width == 0 && state->screen_height == 0) {
-        /* Report a somewhat smaller screen size, so that a window does not
-         * try to be larger than the actually available screen size which
-         * might contain a task bar or other shell elements. */
-        state->screen_width = width - 100;
-        state->screen_height = height - 100;
+        state->screen_width = width;
+        state->screen_height = height;
 
         QWS_TRACE("xdg_output: corrected_size %dx%d", state->screen_width,
             state->screen_height);
