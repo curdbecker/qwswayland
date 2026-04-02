@@ -18,7 +18,6 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "alpha-modifier-v1-client-protocol.h"
-#include "xdg-output-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #include "stc/types.h"
@@ -66,8 +65,6 @@ typedef struct qwswl_state {
 
     /* xdg_wm_base for xdg shell (window management) */
     struct xdg_wm_base *xdg_wm_base;
-    struct zxdg_output_manager_v1 *xdg_output_manager;
-    struct zxdg_output_v1 *xdg_output;
 
     /* wl_subcompositor for child/subsurface windows */
     struct wl_subcompositor *wl_subcompositor;

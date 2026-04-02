@@ -96,16 +96,12 @@ __attribute__((unused)) static void force_window_repaint(qwswl_window_t *win) {
 }
 
 static void send_max_region_event(qwswl_state_t *state, qwswl_client_t *cl) {
-    /* Report a somewhat smaller screen size, so that a window does not
-     * try to be larger than the actually available screen size which
-     * might contain a task bar or other shell elements.
-     *
-     * And apparently the window id does not matter at all.... It is
-     * at all only meant to find the correct screen, but well I doubt
+    /* Apparently the window id does not matter at all.... It is
+     * only meant to find the correct screen, but well I doubt
      * we ever have more than one screen that Qt should know about, so
      * any id is apparently fine. */
     qws_packet_t *evt = qws_make_max_window_rect_event(
-        1, 0, 0, state->screen_width - 100, state->screen_height - 100);
+        1, 0, 0, state->screen_width - 1, state->screen_height - 1);
     qws_trace_packet(cl->client_id, evt, true);
     qws_write_packet(cl->fd, evt);
 }

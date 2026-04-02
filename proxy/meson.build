@@ -13,10 +13,6 @@ xdg_shell_src = wayland_mod.scan_xml(
   wp_dir / 'stable/xdg-shell/xdg-shell.xml',
   client: true, server: false)
 
-xdg_output_src = wayland_mod.scan_xml(
-  wp_dir / 'unstable/xdg-output/xdg-output-unstable-v1.xml',
-  client: true, server: false)
-
 alpha_modifier_src = wayland_mod.scan_xml(
   wp_dir / 'staging/alpha-modifier/alpha-modifier-v1.xml',
   client: true, server: false)
@@ -34,7 +30,6 @@ proxy_sources = files(
 # Generated Wayland protocol glue — compiled silently, not our code
 wayland_proto_lib = static_library('wayland_proto_generated',
   xdg_shell_src,
-  xdg_output_src,
   alpha_modifier_src,
   c_args: ['-w'],
 )

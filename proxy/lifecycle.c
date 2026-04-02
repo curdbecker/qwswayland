@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
+
 #include "lifecycle.h"
 #include "client.h"
 #include "debug.h"
@@ -18,8 +20,6 @@
 #include <sys/timerfd.h>
 #include <time.h>
 #include <unistd.h>
-
-#include "xdg-output-unstable-v1-client-protocol.h"
 
 #define T qwswl_client_map_t, int32_t, qwswl_client_t *
 #define i_declared
@@ -42,61 +42,77 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
 };
 
 /* ================================================================
- * xdg_output listener
+ * wl_output listener (fallback when xdg_output_manager is absent)
  * ================================================================ */
 
-static void xdg_output_logical_position(void *data,
-                                        struct zxdg_output_v1 *output,
-                                        int32_t x, int32_t y) {
+static void wl_output_geometry(void *data, struct wl_output *output, int32_t x,
+                               int32_t y, int32_t physical_width,
+                               int32_t physical_height, int32_t subpixel,
+                               const char *make, const char *model,
+                               int32_t transform) {
     (void)data;
     (void)output;
-    QWS_TRACE("xdg_output: logical_position %d,%d", x, y);
+    (void)x;
+    (void)y;
+    (void)physical_width;
+    (void)physical_height;
+    (void)subpixel;
+    (void)transform;
+    QWS_TRACE("wl_output: geometry make=\"%s\" model=\"%s\"", make, model);
 }
 
-static void xdg_output_logical_size(void *data, struct zxdg_output_v1 *output,
-                                    int32_t width, int32_t height) {
+static void wl_output_mode(void *data, struct wl_output *output, uint32_t flags,
+                           int32_t width, int32_t height, int32_t refresh) {
     (void)output;
+    (void)refresh;
+    if (!(flags & WL_OUTPUT_MODE_CURRENT))
+        return;
     qwswl_state_t *state = (qwswl_state_t *)data;
-
-    QWS_TRACE("xdg_output: logical_size %dx%d", width, height);
-
+    QWS_TRACE("wl_output: mode %dx%d", width, height);
     if (state->screen_width == 0 && state->screen_height == 0) {
         state->screen_width = width;
         state->screen_height = height;
-
-        QWS_TRACE("xdg_output: corrected_size %dx%d", state->screen_width,
+        QWS_TRACE("wl_output: corrected_size %dx%d", state->screen_width,
                   state->screen_height);
     } else {
         QWS_TRACE("WARNING: screen geometry was forced via user input");
     }
 }
 
-static void xdg_output_done(void *data, struct zxdg_output_v1 *output) {
+static void wl_output_done(void *data, struct wl_output *output) {
     (void)data;
     (void)output;
-    QWS_TRACE("xdg_output: done");
+    QWS_TRACE("wl_output: done");
 }
 
-static void xdg_output_name(void *data, struct zxdg_output_v1 *output,
-                            const char *name) {
+static void wl_output_scale(void *data, struct wl_output *output,
+                            int32_t factor) {
     (void)data;
     (void)output;
-    QWS_TRACE("xdg_output: name \"%s\"", name);
+    QWS_TRACE("wl_output: scale %d", factor);
 }
 
-static void xdg_output_description(void *data, struct zxdg_output_v1 *output,
-                                   const char *description) {
+static void wl_output_name(void *data, struct wl_output *output,
+                           const char *name) {
     (void)data;
     (void)output;
-    QWS_TRACE("xdg_output: description \"%s\"", description);
+    QWS_TRACE("wl_output: name \"%s\"", name);
 }
 
-static const struct zxdg_output_v1_listener xdg_output_listener = {
-    .logical_position = xdg_output_logical_position,
-    .logical_size = xdg_output_logical_size,
-    .done = xdg_output_done,
-    .name = xdg_output_name,
-    .description = xdg_output_description,
+static void wl_output_description(void *data, struct wl_output *output,
+                                  const char *description) {
+    (void)data;
+    (void)output;
+    QWS_TRACE("wl_output: description \"%s\"", description);
+}
+
+static const struct wl_output_listener wl_output_listener = {
+    .geometry = wl_output_geometry,
+    .mode = wl_output_mode,
+    .done = wl_output_done,
+    .scale = wl_output_scale,
+    .name = wl_output_name,
+    .description = wl_output_description,
 };
 
 /* ================================================================
@@ -134,12 +150,6 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
             wl_registry_bind(reg, name, &xdg_wm_base_interface, version);
         QWS_TRACE("registry: found xdg_wm_base (name=%u, max_version=%u)", name,
                   version);
-    } else if (strcmp(interface, "zxdg_output_manager_v1") == 0) {
-        state->xdg_output_manager = wl_registry_bind(
-            reg, name, &zxdg_output_manager_v1_interface, version);
-        QWS_TRACE(
-            "registry: found zxdg_output_manager_v1 (name=%u, max_version=%u)",
-            name, version);
     } else if (strcmp(interface, "wl_subcompositor") == 0) {
         state->wl_subcompositor =
             wl_registry_bind(reg, name, &wl_subcompositor_interface, version);
@@ -220,42 +230,35 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
         return -1;
     }
 
-    if (!state->xdg_output_manager) {
-        fprintf(stderr, "[qwswayland] No xdg_output_manager found\n");
-        return -1;
-    }
-
     if (!state->xdg_wm_base) {
         fprintf(stderr, "[qwswayland] No xdg_wm_base found\n");
         return -1;
     }
 
-    /* Add seat listener if we got a seat.
-     *
-     * For some weird reason this needs to be registered first (at least before
-     * the xdg_output_manager). Otherwise, we will be able to register the
-     * listener, but will not get a wl_seat_capability callback anymore and
-     * therefore won't have any input. */
+    wl_output_add_listener(state->wl_output, &wl_output_listener, state);
+
+    /* Add seat listener if we got a seat. */
     if (state->wl_seat) {
         wl_seat_add_listener(state->wl_seat, &seat_listener, state);
-        wl_display_roundtrip(state->wl_display);
     } else {
         fprintf(stderr, "[qwswayland] WARNING: No wl_seat found - input "
-                        "devices will be unavailable\n"
-                        "             Window focus will be unreliable.\n");
+                        "devices will be unavailable\n");
     }
-
-    state->xdg_output = zxdg_output_manager_v1_get_xdg_output(
-        state->xdg_output_manager, state->wl_output);
-    if (!state->xdg_output) {
-        fprintf(stderr,
-                "[qwswayland] Failed to create xdg_output for wl_output\n");
-        return -1;
-    }
-    zxdg_output_v1_add_listener(state->xdg_output, &xdg_output_listener, state);
-    wl_display_roundtrip(state->wl_display);
 
     xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener, NULL);
+
+    /*
+     * Apparently, the safer approach to register all listeners first and
+     * only then invoke a display roundtrip, since the roundtrip apparently
+     * causes the compositor to emit specific events that are only emitted
+     * once.
+     *
+     * Hence, I assume that registering another listener later on that
+     * will also depend on the same events (as wl_output, xdg_output and
+     * wl_seat), then we might never get a callback for one of these
+     * listener again... depending on the order in which they were
+     * registered. Great.
+     */
     wl_display_roundtrip(state->wl_display);
 
     /* ---- Initialise display directory and derive all paths ---- */
@@ -414,8 +417,6 @@ void qwswl_shutdown(qwswl_state_t *state) {
         wl_seat_destroy(state->wl_seat);
     if (state->xdg_wm_base)
         xdg_wm_base_destroy(state->xdg_wm_base);
-    if (state->xdg_output_manager)
-        zxdg_output_manager_v1_destroy(state->xdg_output_manager);
     if (state->wl_subcompositor)
         wl_subcompositor_destroy(state->wl_subcompositor);
     if (state->wl_shm)
