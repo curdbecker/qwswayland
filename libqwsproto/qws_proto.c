@@ -131,7 +131,7 @@ int32_t qws_command_simple_len(int32_t type) {
     case QWS_CMD_CREATE:
         return (int32_t)sizeof(qws_cmd_create_t);
     case QWS_CMD_SHUTDOWN:
-        return (int32_t)sizeof(qws_cmd_shutdown_t);
+        return (int32_t)0;
     case QWS_CMD_REGION:
         return (int32_t)sizeof(qws_cmd_region_request_t);
     case QWS_CMD_REGION_MOVE:

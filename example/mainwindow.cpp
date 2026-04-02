@@ -58,8 +58,8 @@ MainWindow::MainWindow()
 
     readSettings();
 
-    connect(textEdit->document(), SIGNAL(contentsChanged()),
-            this, SLOT(documentWasModified()));
+    connect(textEdit->document(), SIGNAL(contentsChanged()), this,
+            SLOT(documentWasModified()));
 
     setCurrentFile("");
     setUnifiedTitleAndToolBarOnMac(true);
@@ -130,10 +130,11 @@ bool MainWindow::saveAs()
 void MainWindow::about()
 //! [13] //! [14]
 {
-   QMessageBox::about(this, tr("About Application"),
-            tr("The <b>Application</b> example demonstrates how to "
-               "write modern GUI applications using Qt, with a menu bar, "
-               "toolbars, and a status bar."));
+    QMessageBox::about(
+        this, tr("About Application"),
+        tr("The <b>Application</b> example demonstrates how to "
+           "write modern GUI applications using Qt, with a menu bar, "
+           "toolbars, and a status bar."));
 }
 //! [14]
 
@@ -154,12 +155,12 @@ void MainWindow::createActions()
     newAct->setStatusTip(tr("Create a new file"));
     connect(newAct, SIGNAL(triggered()), this, SLOT(newFile()));
 
-//! [19]
+    //! [19]
     openAct = new QAction(QIcon(":/images/open.png"), tr("&Open..."), this);
     openAct->setShortcuts(QKeySequence::Open);
     openAct->setStatusTip(tr("Open an existing file"));
     connect(openAct, SIGNAL(triggered()), this, SLOT(open()));
-//! [18] //! [19]
+    //! [18] //! [19]
 
     saveAct = new QAction(QIcon(":/images/save.png"), tr("&Save"), this);
     saveAct->setShortcuts(QKeySequence::Save);
@@ -171,16 +172,16 @@ void MainWindow::createActions()
     saveAsAct->setStatusTip(tr("Save the document under a new name"));
     connect(saveAsAct, SIGNAL(triggered()), this, SLOT(saveAs()));
 
-//! [20]
+    //! [20]
     exitAct = new QAction(tr("E&xit"), this);
     exitAct->setShortcuts(QKeySequence::Quit);
-//! [20]
+    //! [20]
     exitAct->setStatusTip(tr("Exit the application"));
     connect(exitAct, SIGNAL(triggered()), this, SLOT(close()));
 
-//! [21]
+    //! [21]
     cutAct = new QAction(QIcon(":/images/cut.png"), tr("Cu&t"), this);
-//! [21]
+    //! [21]
     cutAct->setShortcuts(QKeySequence::Cut);
     cutAct->setStatusTip(tr("Cut the current selection's contents to the "
                             "clipboard"));
@@ -202,20 +203,20 @@ void MainWindow::createActions()
     aboutAct->setStatusTip(tr("Show the application's About box"));
     connect(aboutAct, SIGNAL(triggered()), this, SLOT(about()));
 
-//! [22]
+    //! [22]
     aboutQtAct = new QAction(tr("About &Qt"), this);
     aboutQtAct->setStatusTip(tr("Show the Qt library's About box"));
     connect(aboutQtAct, SIGNAL(triggered()), qApp, SLOT(aboutQt()));
-//! [22]
+    //! [22]
 
-//! [23]
+    //! [23]
     cutAct->setEnabled(false);
-//! [23] //! [24]
+    //! [23] //! [24]
     copyAct->setEnabled(false);
-    connect(textEdit, SIGNAL(copyAvailable(bool)),
-            cutAct, SLOT(setEnabled(bool)));
-    connect(textEdit, SIGNAL(copyAvailable(bool)),
-            copyAct, SLOT(setEnabled(bool)));
+    connect(textEdit, SIGNAL(copyAvailable(bool)), cutAct,
+            SLOT(setEnabled(bool)));
+    connect(textEdit, SIGNAL(copyAvailable(bool)), copyAct,
+            SLOT(setEnabled(bool)));
 }
 //! [24]
 
@@ -225,11 +226,11 @@ void MainWindow::createMenus()
 {
     fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(newAct);
-//! [28]
+    //! [28]
     fileMenu->addAction(openAct);
-//! [28]
+    //! [28]
     fileMenu->addAction(saveAct);
-//! [26]
+    //! [26]
     fileMenu->addAction(saveAsAct);
     fileMenu->addSeparator();
     fileMenu->addAction(exitAct);
@@ -248,13 +249,12 @@ void MainWindow::createMenus()
 //! [27]
 
 //! [29] //! [30]
-void MainWindow::createToolBars()
-{
+void MainWindow::createToolBars() {
     fileToolBar = addToolBar(tr("File"));
     fileToolBar->addAction(newAct);
-//! [29] //! [31]
+    //! [29] //! [31]
     fileToolBar->addAction(openAct);
-//! [31]
+    //! [31]
     fileToolBar->addAction(saveAct);
 
     editToolBar = addToolBar(tr("Edit"));
@@ -303,9 +303,10 @@ bool MainWindow::maybeSave()
     if (textEdit->document()->isModified()) {
         QMessageBox::StandardButton ret;
         ret = QMessageBox::warning(this, tr("Application"),
-                     tr("The document has been modified.\n"
-                        "Do you want to save your changes?"),
-                     QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+                                   tr("The document has been modified.\n"
+                                      "Do you want to save your changes?"),
+                                   QMessageBox::Save | QMessageBox::Discard |
+                                       QMessageBox::Cancel);
         if (ret == QMessageBox::Save)
             return save();
         else if (ret == QMessageBox::Cancel)
@@ -323,8 +324,8 @@ void MainWindow::loadFile(const QString &fileName)
     if (!file.open(QFile::ReadOnly | QFile::Text)) {
         QMessageBox::warning(this, tr("Application"),
                              tr("Cannot read file %1:\n%2.")
-                             .arg(fileName)
-                             .arg(file.errorString()));
+                                 .arg(fileName)
+                                 .arg(file.errorString()));
         return;
     }
 
@@ -350,8 +351,8 @@ bool MainWindow::saveFile(const QString &fileName)
     if (!file.open(QFile::WriteOnly | QFile::Text)) {
         QMessageBox::warning(this, tr("Application"),
                              tr("Cannot write file %1:\n%2.")
-                             .arg(fileName)
-                             .arg(file.errorString()));
+                                 .arg(fileName)
+                                 .arg(file.errorString()));
         return false;
     }
 

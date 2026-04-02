@@ -10,4 +10,5 @@ preprocessed = qt4_mod.preprocess(
 executable('example',
   sources: ['main.cpp', 'mainwindow.cpp', 'debug.cpp'] + preprocessed,
   dependencies: qt4_dep,
+  cpp_args: '-Wno-error'
 )

@@ -93,7 +93,7 @@ __attribute__((unused)) static void force_window_repaint(qwswl_window_t *win) {
     qwswl_client_t *cl = win->client;
     send_region_event(cl, win, NULL, 0);
     send_region_event(cl, win, win->geometry.rects, win->geometry.nrects);
-};
+}
 
 static void send_max_region_event(qwswl_state_t *state, qwswl_client_t *cl) {
     /* Report a somewhat smaller screen size, so that a window does not
@@ -221,7 +221,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
                 assert(sd->mem_id >= 0);
 
-                qwswl_attach_client_shm(win, sd->mem_id, sd->width, sd->height);
+                qwswl_attach_client_shm(win, sd->mem_id);
             }
             free(surface_key);
 

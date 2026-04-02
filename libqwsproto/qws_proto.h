@@ -277,7 +277,6 @@ enum qws_keyboard_modifier {
     QWS_MOD_META = 0x10000000,
     QWS_MOD_KEYPAD = 0x20000000,
     QWS_MOD_GROUP_SWITCH = 0x40000000,
-    QWS_MOD_MASK = 0xfe000000,
 };
 
 /* Qt::MouseButton flags — matches Qt 4.8 qnamespace.h */
@@ -606,9 +605,9 @@ typedef struct {
 /* QWS_CMD_SHUTDOWN: carries no simpleData and no rawData.
  * The client sends this to request a clean server-side teardown of its
  * session. The server closes the connection upon receipt. */
-typedef struct {
-    /* intentionally empty — QWSShutdownCommand has no payload fields */
-} qws_cmd_shutdown_t;
+
+/* QWSShutdownCommand has no payload fields */
+typedef void qws_cmd_shutdown_t;
 
 /* QWS_CMD_PLAY_SOUND (19)
  * rawData = filename as UTF-16LE QChars */

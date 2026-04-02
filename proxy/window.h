@@ -54,8 +54,8 @@ typedef struct qwswl_window {
         int fd;
         size_t size;
         int32_t format; /* wl_shm_format */
-        size_t width;
-        size_t height;
+        int32_t width;
+        int32_t height;
     } server_shm;
 
     /* QWS client pixel buffer (SysV shm, permanently attached) */
@@ -101,8 +101,7 @@ void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win,
 /* Attach, reattach or detach the QWS client's SysV shm as a permanently-mapped
  * read-only buffer on the window. Detaches any previously attached mapping
  * when the shm_id changes. */
-void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id, int32_t width,
-                             int32_t height);
+void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id);
 void qwswl_detach_client_shm(qwswl_window_t *win);
 
 /* Copy pixels from QWS client's shared memory into the Wayland buffer,

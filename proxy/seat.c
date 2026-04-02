@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: MIT
  */
 
+#define _GNU_SOURCE
+
 #include "seat.h"
 #include "client.h"
 #include "lifecycle.h"
@@ -86,6 +88,8 @@ static void update_pointer_position(qwswl_state_t *state, wl_fixed_t sx,
 static void pointer_enter(void *data, struct wl_pointer *ptr, uint32_t serial,
                           struct wl_surface *surface, wl_fixed_t sx,
                           wl_fixed_t sy) {
+    (void)ptr;
+    (void)serial;
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_window_t *win = qwswl_surface_to_win(surface);
     assert(win);
@@ -105,6 +109,9 @@ static void pointer_enter(void *data, struct wl_pointer *ptr, uint32_t serial,
 
 static void pointer_leave(void *data, struct wl_pointer *ptr, uint32_t serial,
                           struct wl_surface *surface) {
+    (void)ptr;
+    (void)serial;
+    (void)surface;
     qwswl_state_t *state = (qwswl_state_t *)data;
     state->pointer_state.win = NULL;
 
@@ -119,6 +126,8 @@ static void pointer_leave(void *data, struct wl_pointer *ptr, uint32_t serial,
 
 static void pointer_motion(void *data, struct wl_pointer *ptr, uint32_t time,
                            wl_fixed_t sx, wl_fixed_t sy) {
+    (void)ptr;
+    (void)time;
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_pointer_state_t *pstate = &state->pointer_state;
     assert(pstate);
@@ -145,6 +154,8 @@ static void pointer_motion(void *data, struct wl_pointer *ptr, uint32_t time,
 
 static void pointer_button(void *data, struct wl_pointer *ptr, uint32_t serial,
                            uint32_t time, uint32_t button, uint32_t btn_state) {
+    (void)ptr;
+    (void)time;
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_pointer_state_t *pstate = &state->pointer_state;
     assert(pstate);
@@ -181,6 +192,8 @@ static void pointer_button(void *data, struct wl_pointer *ptr, uint32_t serial,
 
 static void pointer_axis(void *data, struct wl_pointer *ptr, uint32_t time,
                          uint32_t axis, wl_fixed_t value) {
+    (void)ptr;
+    (void)time;
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_pointer_state_t *pstate = &state->pointer_state;
     assert(pstate);
@@ -417,6 +430,7 @@ static void send_key_event(qwswl_keyboard_state_t *kbd_state, int16_t unicode,
 
 static void keyboard_keymap(void *data, struct wl_keyboard *kbd,
                             uint32_t format, int32_t fd, uint32_t size) {
+    (void)kbd;
     assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
@@ -437,6 +451,7 @@ static void keyboard_keymap(void *data, struct wl_keyboard *kbd,
 
 static void keyboard_enter(void *data, struct wl_keyboard *kbd, uint32_t serial,
                            struct wl_surface *surface, struct wl_array *keys) {
+    (void)kbd;
     (void)serial;
     uint32_t *k;
     qwswl_state_t *state = (qwswl_state_t *)data;
@@ -455,6 +470,7 @@ static void keyboard_enter(void *data, struct wl_keyboard *kbd, uint32_t serial,
 
 static void keyboard_leave(void *data, struct wl_keyboard *kbd, uint32_t serial,
                            struct wl_surface *surface) {
+    (void)kbd;
     (void)serial;
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
@@ -470,6 +486,7 @@ static void keyboard_leave(void *data, struct wl_keyboard *kbd, uint32_t serial,
 
 static void keyboard_key(void *data, struct wl_keyboard *kbd, uint32_t serial,
                          uint32_t time, uint32_t key, uint32_t key_state) {
+    (void)kbd;
     (void)serial;
     (void)time;
     qwswl_state_t *state = (qwswl_state_t *)data;
@@ -528,6 +545,8 @@ static void keyboard_modifiers(void *data, struct wl_keyboard *kbd,
                                uint32_t serial, uint32_t mods_depressed,
                                uint32_t mods_latched, uint32_t mods_locked,
                                uint32_t group) {
+    (void)kbd;
+    (void)serial;
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
 

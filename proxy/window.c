@@ -45,6 +45,7 @@ const struct xdg_surface_listener xdg_surface_listener = {
 static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
                                    int32_t width, int32_t height,
                                    struct wl_array *states) {
+    (void)data;
     (void)toplevel;
     (void)states;
     /* width/height of 0 means "compositor defers to the client" */
@@ -52,12 +53,18 @@ static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
 }
 
 static void xdg_toplevel_close(void *data, struct xdg_toplevel *toplevel) {
+    (void)data;
     (void)toplevel;
 }
 
 static void xdg_toplevel_configure_bounds(void *data,
                                           struct xdg_toplevel *xdg_toplevel,
-                                          int32_t width, int32_t height) {}
+                                          int32_t width, int32_t height) {
+    (void)data;
+    (void)xdg_toplevel;
+    (void)width;
+    (void)height;
+}
 
 static void xdg_wm_capabilities(void *data, struct xdg_toplevel *xdg_toplevel,
                                 struct wl_array *capabilities) {
@@ -91,8 +98,7 @@ static void release_server_shm(qwswl_window_t *win) {
         wl_shm_pool_destroy(win->server_shm.pool);
 }
 
-void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id, int32_t width,
-                             int32_t height) {
+void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id) {
     if (win->client_shm.shm.shm_id == shm_id || shm_id == -1)
         return;
 
@@ -434,7 +440,7 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
         if (cond) {                                                            \
             QWS_TRACE("update_surface skip rect[%d]: " #cond                   \
                       " (copy_x=%d copy_y=%d copy_w=%d copy_h=%d "             \
-                      "server_w=%lu server_h=%lu)",                            \
+                      "server_w=%d server_h=%d)",                              \
                       i, copy_x, copy_y, copy_w, copy_h,                       \
                       win->server_shm.width, win->server_shm.height);          \
             assert(!(cond));                                                   \
@@ -452,15 +458,15 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
         DBG_RECT_ASSERT((copy_y + copy_h) > win->server_shm.height);
 #undef DBG_RECT_ASSERT
 
-        uint32_t row_offset = copy_x * bytes_per_pixel;
-        uint32_t row_bytes = win->server_shm.width * bytes_per_pixel;
+        int32_t row_offset = copy_x * bytes_per_pixel;
+        int32_t row_bytes = win->server_shm.width * bytes_per_pixel;
 
         for (int32_t j = 0; j < copy_h; j++) {
-            uint32_t y = copy_y + j;
+            int32_t y = copy_y + j;
             if (y > win->server_shm.height)
                 break;
 
-            uint32_t off = row_offset + (y * row_bytes);
+            int32_t off = row_offset + (y * row_bytes);
             memcpy((uint8_t *)win->server_shm.pixels + off,
                    (const uint8_t *)src + off, copy_w * bytes_per_pixel);
         }
