@@ -8,6 +8,12 @@
     "mesonbuild.configureEnvironment": {
         "PKG_CONFIG_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib/pkgconfig"
     },
+    // Shared qwswayland launch arguments — referenced by all launch configs
+    // via ${config:qwswayland.args.*} so there is a single place to edit.
+    "qwswayland.args.verbosity":    "brief",
+    "qwswayland.args.excludeFilter": "SelectCursor",
+    "qwswayland.args.debugLevel":   "3",
+
     "cSpell.words": [
         "buildroot",
         "desync",

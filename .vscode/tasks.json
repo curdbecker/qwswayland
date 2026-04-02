@@ -121,6 +121,49 @@
             ],
             "dependsOrder": "sequence",
             "problemMatcher": []
+        },
+        {
+            "label": "waypipe: 1. socat tunnel",
+            "type": "shell",
+            "command": "socat UNIX-LISTEN:/tmp/waypipe-server.sock,fork TCP:192.168.64.1:12345",
+            "options": {
+                "cwd": "/tmp"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "waypipe"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "waypipe: 2. server",
+            "type": "shell",
+            "command": "mkdir -p /tmp/xdg; rm /tmp/xdg/wayland-proxy; waypipe --display wayland-proxy --socket /tmp/waypipe-server.sock server sleep infinity",
+            "options": {
+                "cwd": "/tmp",
+                "env": {
+                    "XDG_RUNTIME_DIR": "/tmp/xdg"
+                }
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "waypipe"
+            },
+            "problemMatcher": []
+        },
+
+        {
+            "label": "waypipe: Launch All",
+            "dependsOn": [
+                "waypipe: 1. socat tunnel",
+                "waypipe: 2. server"
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
         }
     ]
 }

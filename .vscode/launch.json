@@ -1,20 +1,44 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
         {
             "type": "cppdbg",
-            "name": "qwswayland",
+            "name": "weston: qwswayland",
             "request": "launch",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
             "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
-            //"args": ["-v", "brief", "-D", "-d", "3", "-P", "debug_move.pcapng"],
-            "args": ["-v", "brief", "-x", "Mouse,SelectCursor,RepaintRegion", "-d", "3"],
+            "args": ["-v", "${config:qwswayland.args.verbosity}", "-x", "${config:qwswayland.args.excludeFilter}", "-d", "${config:qwswayland.args.debugLevel}"],
             "environment": [
                 { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
-                { "name": "WAYLAND_DEBUG",   "value": "0" }
+                { "name": "WAYLAND_DEBUG",   "value": "0" },
+            ],
+            "MIMode": "gdb",
+            "envFile": "${workspaceFolder}/${config:mesonbuild.buildFolder}/meson-vscode.env",
+            "preLaunchTask": "Meson: Build all targets",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "presentation": {
+                "hidden": false,
+                "group": "qwswayland + example-client",
+                "order": 1
+            }
+        },
+        {
+            "type": "cppdbg",
+            "name": "waypipe: qwswayland",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
+            "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
+            "args": ["-v", "${config:qwswayland.args.verbosity}", "-x", "${config:qwswayland.args.excludeFilter}", "-d", "${config:qwswayland.args.debugLevel}"],
+            "environment": [
+                { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
+                { "name": "WAYLAND_DEBUG",   "value": "0" },
+                { "name": "WAYLAND_DISPLAY",  "value": "wayland-proxy" }
             ],
             "MIMode": "gdb",
             "envFile": "${workspaceFolder}/${config:mesonbuild.buildFolder}/meson-vscode.env",
@@ -51,35 +75,6 @@
                 "group": "qwswayland + example-client",
                 "order": 2
             }
-        },
-
-        {
-            "type": "cppdbg",
-            "request": "launch",
-            "name": "weston (VNC)",
-            "program": "/usr/bin/weston",
-            "args": [
-                "-S", "/tmp/xdg/wayland-0",
-                "-B", "vnc",
-                "--disable-transport-layer-security",
-                "--port=5900",
-                "--idle-time=0",
-                "--width=1024",
-                "--height=768"
-            ],
-            "cwd": "/tmp",
-            "environment": [
-                { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
-                { "name": "WAYLAND_DEBUG",   "value": "0" }
-            ],
-            "MIMode": "gdb",
-            "setupCommands": [
-                {
-                    "description": "Enable pretty-printing for gdb",
-                    "text": "-enable-pretty-printing",
-                    "ignoreFailures": true
-                }
-            ]
         },
 
         // --- Trace proxy setup (3 configs + compound below) ---
@@ -165,14 +160,19 @@
     ],
      "compounds": [
         {
-          "name": "qwswayland + example-client",
-          "configurations": ["qwswayland", "example-client"],
+          "name": "weston: qwswayland + example-client",
+          "configurations": ["weston: qwswayland", "example-client"],
           "stopAll": true
         },
         {
           "name": "trace: Full Setup (debug)",
           "configurations": ["trace: 1. QWS Server", "trace: 2. Proxy", "trace: 3. QWS Client"],
           "stopAll": true
-        }
+        },
+        {
+          "name": "waypipe: qwswayland + example-client",
+          "configurations": ["waypipe: qwswayland", "example-client"],
+          "stopAll": true
+        },
     ],
 }
