@@ -17,6 +17,10 @@ alpha_modifier_src = wayland_mod.scan_xml(
   wp_dir / 'staging/alpha-modifier/alpha-modifier-v1.xml',
   client: true, server: false)
 
+qt_shell_src = wayland_mod.scan_xml(
+'protocols/qt-shell-unstable-v1.xml',
+client: true, server: false)
+
 proxy_sources = files(
   'main.c',
   'client.c',
@@ -31,6 +35,7 @@ proxy_sources = files(
 wayland_proto_lib = static_library('wayland_proto_generated',
   xdg_shell_src,
   alpha_modifier_src,
+  qt_shell_src,
   c_args: ['-w'],
 )
 

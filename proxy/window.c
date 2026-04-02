@@ -26,6 +26,7 @@
 #include "stc/common.h"
 #include "stc/sys/utility.h"
 
+#include "qt-shell-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 /* ================================================================
@@ -81,6 +82,83 @@ static const struct xdg_toplevel_listener xdg_toplevel_listener = {
 };
 
 /* ================================================================
+ * zqt_shell_surface_v1 listeners
+ * ================================================================ */
+
+static void qt_shell_surface_resize(void *data,
+                                    struct zqt_shell_surface_v1 *surface,
+                                    uint32_t serial, int32_t width,
+                                    int32_t height) {
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    (void)surface;
+    QWS_TRACE("qt_shell: resize win=%d serial=%u %dx%d", win->qws_id, serial,
+              width, height);
+}
+
+static void qt_shell_surface_set_position(void *data,
+                                          struct zqt_shell_surface_v1 *surface,
+                                          uint32_t serial, int32_t x,
+                                          int32_t y) {
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    (void)surface;
+    QWS_TRACE("qt_shell: set_position win=%d serial=%u %d,%d", win->qws_id,
+              serial, x, y);
+}
+
+static void
+qt_shell_surface_set_window_state(void *data,
+                                  struct zqt_shell_surface_v1 *surface,
+                                  uint32_t serial, uint32_t state) {
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    (void)surface;
+    QWS_TRACE("qt_shell: set_window_state win=%d serial=%u state=0x%x",
+              win->qws_id, serial, state);
+}
+
+static void qt_shell_surface_configure(void *data,
+                                       struct zqt_shell_surface_v1 *surface,
+                                       uint32_t serial) {
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    QWS_TRACE("qt_shell: configure win=%d serial=%u -> ack", win->qws_id,
+              serial);
+    zqt_shell_surface_v1_ack_configure(surface, serial);
+}
+
+static void qt_shell_surface_set_frame_margins(
+    void *data, struct zqt_shell_surface_v1 *surface, uint32_t left,
+    uint32_t right, uint32_t top, uint32_t bottom) {
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    (void)surface;
+    QWS_TRACE("qt_shell: set_frame_margins win=%d l=%u r=%u t=%u b=%u",
+              win->qws_id, left, right, top, bottom);
+}
+
+static void qt_shell_surface_close(void *data,
+                                   struct zqt_shell_surface_v1 *surface) {
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    (void)surface;
+    QWS_TRACE("qt_shell: close win=%d", win->qws_id);
+}
+
+static void qt_shell_surface_set_capabilities(
+    void *data, struct zqt_shell_surface_v1 *surface, uint32_t capabilities) {
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    (void)surface;
+    QWS_TRACE("qt_shell: set_capabilities win=%d caps=0x%x", win->qws_id,
+              capabilities);
+}
+
+static const struct zqt_shell_surface_v1_listener qt_shell_surface_listener = {
+    .resize = qt_shell_surface_resize,
+    .set_position = qt_shell_surface_set_position,
+    .set_window_state = qt_shell_surface_set_window_state,
+    .configure = qt_shell_surface_configure,
+    .set_frame_margins = qt_shell_surface_set_frame_margins,
+    .close = qt_shell_surface_close,
+    .set_capabilities = qt_shell_surface_set_capabilities,
+};
+
+/* ================================================================
  * Pixel buffer management
  * ================================================================ */
 
@@ -129,9 +207,50 @@ static int qwswl_resize_buffer(qwswl_state_t *state, qwswl_window_t *win,
         return -1;
     }
 
+    /* No need to do anything the buffer if the window parameters didn't change.
+     *
+     * Note that this is decoupled from the actual size of the window,
+     * since the window might be larger but currently its visiblity on
+     * the screen is possibly constrained.
+     */
+    if (win->server_shm.width == width && win->server_shm.height == height)
+        return 0;
+
+    /* We need to update the buffer in any case, since we need to associate
+     * the new window dimensions with the buffer and the only way to do this is
+     * apparently recreating the buffer. Otherwise, there might be some really
+     * strange display artifacts about to happen. */
+    if (win->wl_surface) {
+        /* If there is already a surface, we need to make sure sure that
+         * the compositor isn't currently using the buffer, so we remove
+         * the buffer from the surface and commit it */
+        wl_surface_attach(win->wl_surface, NULL, 0, 0);
+        wl_surface_commit(win->wl_surface);
+    }
+
+    /*
+     * Note for the potential future:
+     *
+     * The wl_buffer.release event is not sent if the client has already
+     * destroyed the wl_buffer resource, since events are not meant to be sent
+     * on a destroyed resource - at least that is the interpretation of the Qt
+     * compositor implementation.
+     *
+     * Still, this was a a bit surprising at least, since one would suspect that
+     * this event might provide an opportunity to decide when the buffer was
+     * also freed on compositor side... It is a bit weird to keep a buffer
+     * around just to find out when the compositor is done using it.
+     *
+     * But somehow the entire Wayland interface API seems a bit overly
+     * complicated and too weakly specified at the same time... at least for my
+     * taste.
+     * */
+    wl_buffer_destroy(win->server_shm.buffer);
+
     if (win->server_shm.size < size) {
         /* We need to resize the backing file, our memory mapping
-         * and force Wayland to do a remap on its end. */
+         * and either force the compositor to do a remap on its end
+         * or re-create the pool entirely. */
 
         if (ftruncate(win->server_shm.fd, (off_t)size) < 0)
             return -1;
@@ -141,32 +260,97 @@ static int qwswl_resize_buffer(qwswl_state_t *state, qwswl_window_t *win,
         if (pixels == MAP_FAILED)
             return -1;
 
-        wl_shm_pool_resize(win->server_shm.pool, size);
+        if (compositor_is_likely_qt(state)) {
+            /*
+             * Unfortunately, Qt seems to exploit the fact that the Wayland
+             * specification isn't really clear on how the shm pool and buffer
+             * lifecycle are intended to work to do some optimizations that
+             * prove rather unfortunately annoying for us:
+             *
+             * The Wayland protocol provides wl_shm_pool_resize() to allow
+             * clients to grow an existing shm pool in-place, avoiding the
+             * overhead of creating new pools and file descriptors on every
+             * buffer size change. This is particularly relevant for qwswayland,
+             * where QWS-internal window resizing (driven by QWSManager)
+             * produces a rapid stream of incremental buffer size increases that
+             * are invisible to the Wayland compositor as configure events.
+             *
+             * While this works correctly on Weston (as I understand the
+             * de-facto reference compositor), it fails on the Qt compositor
+             * due to how Qt manages internal references to the pool's mapped
+             * memory. The root cause is in the compositor-side implementation
+             * of SharedMemoryBuffer::image() (qwlclientbuffer.cpp).
+             *
+             * When the compositor converts a wl_shm_buffer into a QImage for
+             * rendering, it calls wl_shm_buffer_ref_pool() which increments the
+             * pool's refcount, and then constructs a QImage whose data pointer
+             * points directly into the pool's mmap'd region. The pool ref is
+             * only released when the QImage is destroyed via the
+             * shmBufferCleanup callback, which calls wl_shm_pool_unref().
+             *
+             * The problem is that wl_shm_pool_resize() in libwayland's
+             * server-side implementation might cause the shared memory region
+             * to be relocated to a new base address, invalidating any existing
+             * pointers into the old mapping — including those held by QImage
+             * instances in the compositor's render pipeline. The extra pool
+             * ref prevents the pool from being freed, but does NOT prevent
+             * mremap from moving it. The result is that any QImage still
+             * referencing the old mapping will read from stale or
+             * unmapped memory.
+             *
+             * The wl_display_roundtrip() only seems to guarantee that all prior
+             * requests have been processed at the protocol level. It does not
+             * guarantee that the compositor has finished its internal
+             * asynchronous operations (such as rendering on a separate thread)
+             * that may still hold references to the pool mapping.
+             * It seems that this was likely the intention as Weston is doing it
+             * this way but there doesn't seem anything specific in the
+             * specification that demands this approach.
+             *
+             * Notably, Qt's own Wayland client apparently never uses
+             * wl_shm_pool_resize() at all. Each QWaylandShmBuffer creates a
+             * fresh temporary file, a new wl_shm_pool, and a single wl_buffer
+             * from that pool. The pool is effectively 1:1 with the buffer.
+             * This sidesteps the entire issue but seems rather wasteful in
+             * comparision to the intention of sharing resources as the wl_shm
+             * pool is likely meant to propagate.
+             *
+             * Our workaround when connected to a Qt compositor: create a new
+             * pool per buffer (following Qt's own client pattern), reusing the
+             * underlying file descriptor via ftruncate() to preserve page cache
+             * locality and avoid fd churn. When connected to Weston or other
+             * compositors that handle pool resize correctly, the resize path
+             * remains available and preferred.
+             *
+             * Although I strongly was under the impression that this could be
+             * considered a specification violation and therefore basically a
+             * bug in Qt, this is likely is a somewhat valid, deliberate design
+             * choice that provides safe asynchronous access to buffer memory in
+             * the render thread without the runtime overhead of creating
+             * additional copies. Since Qt's own Wayland client never uses pool
+             * resize, the incompatibility with wl_shm_pool_resize() has
+             * therefore obviously also no impact on Qt itself.
+             */
+            wl_shm_pool_destroy(win->server_shm.pool);
+            win->server_shm.pool = wl_shm_create_pool(
+                state->wl_shm, win->server_shm.fd, (int32_t)size);
+            if (!win->server_shm.pool) {
+                munmap(pixels, size);
+                close(win->server_shm.fd);
+                return -1;
+            }
+        } else {
+            /* Well, it can be that easy.. until it is not. */
+            wl_shm_pool_resize(win->server_shm.pool, size);
+
+            /* Finally, we need to force the compositor to process all
+             * outstanding events - for other compositors this is hopefully
+             * also a solid indicator that resizing has been completed */
+            wl_display_roundtrip(state->wl_display);
+        }
 
         win->server_shm.size = size;
     }
-
-    /* No need to resize the buffer if the window parameters didn't change.
-     *
-     * Note that this is decoupled from the actual size of the window,
-     * since the window might be larger but currently its visiblity on
-     * the screen is possibly constrained.
-     */
-    if (win->server_shm.width == width && win->server_shm.height == height)
-        return 0;
-
-    if (win->wl_surface) {
-        /* we need to make sure that the compositor isn't currently
-         * using the buffer, so we need commit and force it to process
-         * all outstanding events */
-        wl_surface_commit(win->wl_surface);
-        wl_display_roundtrip(state->wl_display);
-    }
-
-    /* We need to update the buffer in any case, since we need to associate
-     * the window dimensions with the buffer. Otherwise, there might be some
-     * really strange display artifacts about to happen. */
-    wl_buffer_destroy(win->server_shm.buffer);
 
     struct wl_buffer *buffer = wl_shm_pool_create_buffer(
         win->server_shm.pool, 0, width, height, stride, WL_SHM_FORMAT_ARGB8888);
@@ -290,6 +474,7 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
      * The only uncertainty is whether a subsequent RegionCommand for an
      * already existing region will actually reset the offsets...
      */
+    int32_t old_x = win->geometry.x, old_y = win->geometry.y;
     int32_t min_x1, min_y1, max_x2, max_y2;
     qws_rect_bounding_box(rects, nrects, &min_x1, &min_y1, &max_x2, &max_y2);
     win->geometry.x = min_x1;
@@ -309,6 +494,7 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
     if (win->parent)
         position_window_relative_to_parent(win);
 
+    int32_t visible_width, visible_height;
     {
         qws_rect_t *translated_rects =
             qws_rect_clone(win->geometry.rects, win->geometry.nrects);
@@ -318,13 +504,22 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
 
         qws_rect_bounding_box(translated_rects, win->geometry.nrects, &min_x1,
                               &min_y1, &max_x2, &max_y2);
-        int32_t visible_width = max_x2 - min_x1 + 1;
-        int32_t visible_height = max_y2 - min_y1 + 1;
+        visible_width = max_x2 - min_x1 + 1;
+        visible_height = max_y2 - min_y1 + 1;
 
         /* we may need to resize/create the buffer as well */
         assert(qwswl_create_or_update_buffer(state, win, visible_width,
                                              visible_height) == 0);
         free(translated_rects);
+    }
+
+    if (win->zqt_shell_surface) {
+        if (old_x != win->geometry.x || old_y != win->geometry.y)
+            zqt_shell_surface_v1_reposition(win->zqt_shell_surface,
+                                            win->geometry.x, win->geometry.y);
+        zqt_shell_surface_v1_set_size(win->zqt_shell_surface,
+                                      win->server_shm.width,
+                                      win->server_shm.height);
     }
 }
 
@@ -528,15 +723,43 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
     win->wl_surface = wl_compositor_create_surface(state->wl_compositor);
 
     if (QWS_IS_TOPLEVEL_TYPE(window_flags)) {
-        /* Toplevel window: wrap in xdg_surface + xdg_toplevel.
-         * Listeners must be added before the initial commit so we don't
-         * miss the configure event that the compositor sends in response. */
-        win->xdg_surface =
-            xdg_wm_base_get_xdg_surface(state->xdg_wm_base, win->wl_surface);
-        win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
-        xdg_surface_add_listener(win->xdg_surface, &xdg_surface_listener, win);
-        xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener,
-                                  win);
+        if (state->zqt_shell) {
+            win->zqt_shell_surface =
+                zqt_shell_v1_surface_create(state->zqt_shell, win->wl_surface);
+            zqt_shell_surface_v1_add_listener(win->zqt_shell_surface,
+                                              &qt_shell_surface_listener, win);
+            zqt_shell_surface_v1_set_size(win->zqt_shell_surface,
+                                          win->geometry.width,
+                                          win->geometry.height);
+
+            /*
+             * It is kind of paradox that when we finally have basically the
+             * next-generation of what we're translating on the other end using
+             * the same flags as before, we unfortunately have to hide them
+             * at least for now.
+             *
+             * Otherwise, we would actually get two window decorations now,
+             * since QWS servers did not provide support for window decorations
+             * as this was the responsibility of the client, but Qt Wayland
+             * does, and we do not seem to have a non-intrusive way to turn it
+             * off on the client-side.
+             */
+            zqt_shell_surface_v1_set_window_flags(win->zqt_shell_surface,
+                                                  QWS_WF_FRAMELESS);
+            //   win->win_flags);
+        } else {
+            /* Toplevel window: wrap in xdg_surface + xdg_toplevel.
+             * Listeners must be added before the initial commit so we don't
+             * miss the configure event that the compositor sends in response.
+             */
+            win->xdg_surface = xdg_wm_base_get_xdg_surface(state->xdg_wm_base,
+                                                           win->wl_surface);
+            win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
+            xdg_surface_add_listener(win->xdg_surface, &xdg_surface_listener,
+                                     win);
+            xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener,
+                                      win);
+        }
     } else {
         /* Child window: attach as a subsurface of the root toplevel.
          * No xdg-shell role or configure handshake needed. */
@@ -573,6 +796,9 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win) {
 
     if (win->alpha_modifier_surface)
         wp_alpha_modifier_surface_v1_destroy(win->alpha_modifier_surface);
+
+    if (win->zqt_shell_surface)
+        zqt_shell_surface_v1_destroy(win->zqt_shell_surface);
 
     if (win->xdg_toplevel)
         xdg_toplevel_destroy(win->xdg_toplevel);
@@ -693,6 +919,25 @@ void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption) {
 
     if (win->xdg_toplevel)
         xdg_toplevel_set_title(win->xdg_toplevel, caption);
+    if (win->zqt_shell_surface)
+        zqt_shell_surface_v1_set_window_title(win->zqt_shell_surface, caption);
+}
+
+void qwswl_request_focus(qwswl_window_t *win) {
+    /*
+     * With a generic Wayland compositor there is not much we can do here:
+     * the compositor controls all user-related input (sometimes well-meaning,
+     * but a bit misguided IMHO) to protect the user from weird or intrusive
+     * behaviour by applications.  A request_focus command without a related
+     * focus event will therefore be treated by the client as a decline.
+     *
+     * However, when Qt Wayland is the compositor on the other end, then
+     * the private QtShell protocol — QWS's spiritual successor — offers us
+     * basically the same degree of control as QWS did before and we can
+     * directly ask the compositor to activate the surface.
+     */
+    if (win->zqt_shell_surface)
+        zqt_shell_surface_v1_request_activate(win->zqt_shell_surface);
 }
 
 /* -----------------------------------------------------------

@@ -66,6 +66,10 @@ void qwswl_stack_dump(const qwswl_client_t *client);
  * to match the logical window stack.  Call after any raise/lower. */
 void qwswl_reorder_subsurfaces(qwswl_client_t *cl, qwswl_window_t *parent);
 
+/* Re-establish Z-order for all Qt shell toplevels to match the logical
+ * window stack.  Call after any raise/lower, alongside reorder_subsurfaces. */
+void qwswl_reorder_toplevels(qwswl_client_t *cl);
+
 /* Callback type used by qwswl_update_regions to emit a
  * QWSRegionEvent::Allocation. The implementation (send_region_event in proxy.c)
  * is responsible for sending the packet and unlocking the client lock. */

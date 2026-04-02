@@ -65,7 +65,7 @@ static void dump_window(const qwswl_window_t *win, int index) {
             "       client_shm: fmt=%s(%d)\n"
             "       server_shm: fd=%-3d  sz=%zu\n"
             "       wl_surface=%s  wl_subsurface=%s  parent=%s\n",
-            index, win->qws_id, win->xdg_toplevel ? "toplevel" : "child",
+            index, win->qws_id, qwswl_win_is_toplevel(win) ? "toplevel" : "child",
             win->name ? win->name : "", win->caption ? win->caption : "",
             (unsigned)win->win_flags,
             win->win_flags != (qws_window_flags_t)-1

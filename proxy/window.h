@@ -34,6 +34,9 @@ typedef struct qwswl_window {
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
     struct wl_subsurface *wl_subsurface;
+    /* Qt-specific shell surface (optional, may be NULL if compositor lacks
+     * zqt_shell_v1 or this is a child window). */
+    struct zqt_shell_surface_v1 *zqt_shell_surface;
 
     qwswl_window_t *parent;
 
@@ -92,6 +95,12 @@ void qwswl_hide_window(qwswl_state_t *state, qwswl_window_t *win);
 /* Set the xdg_toplevel title from the QWS region name/caption. */
 void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);
 
+/* Request focus for a window. With a generic Wayland compositor this is a
+ * best-effort hint (focus remains compositor-controlled); with a Qt Wayland
+ * compositor exposing the zqt_shell_v1 protocol the request is forwarded
+ * directly, giving the same degree of control as QWS. */
+void qwswl_request_focus(qwswl_window_t *win);
+
 /* Apply a QWS opacity value (0–255) to the surface via wp_alpha_modifier.
  * Creates the alpha_modifier_surface on first call; emits a warning and
  * returns silently if the compositor does not support the protocol. */
@@ -119,6 +128,15 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
  * be not modified. */
 bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win, int32_t dx,
                        int32_t dy);
+
+/* Returns true if the window has a Wayland toplevel shell surface (either
+ * xdg_surface or zqt_shell_surface_v1).  Use this instead of testing
+ * individual protocol fields whenever the question is simply "is this a
+ * toplevel?", so the check remains correct regardless of which shell
+ * protocol is active. */
+static inline bool qwswl_win_is_toplevel(const qwswl_window_t *win) {
+    return win->xdg_surface != NULL || win->zqt_shell_surface != NULL;
+}
 
 /* -----------------------------------------------------------
  * Hash-table + lookup helpers

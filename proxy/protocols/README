@@ -1,0 +1,11 @@
+Third-Party Protocol Definitions
+=================================
+
+The files in this directory are third-party protocol definitions and are NOT
+covered by the project's MIT licence.  Each file carries its own copyright
+notice and licence terms; see the individual files for details.
+
+qt-shell-unstable-v1.xml
+    Copyright (C) 2021 The Qt Company Ltd.
+    Licence: LicenseRef-Qt-Commercial OR BSD-3-Clause
+    Source: https://github.com/qt/qtwayland/blob/76ea74e8ceb57e4165260d8d216011a31c087642/src/extensions/qt-shell-unstable-v1.xml

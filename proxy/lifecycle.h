@@ -18,6 +18,7 @@
 #include <xkbcommon/xkbcommon.h>
 
 #include "alpha-modifier-v1-client-protocol.h"
+#include "qt-shell-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
 #include "stc/types.h"
@@ -72,6 +73,9 @@ typedef struct qwswl_state {
     /* wp_alpha_modifier for per-surface opacity (optional, may be NULL) */
     struct wp_alpha_modifier_v1 *wp_alpha_modifier;
 
+    /* zqt_shell_v1 for Qt-specific window management (optional, may be NULL) */
+    struct zqt_shell_v1 *zqt_shell;
+
     struct xkb_context *xkb_context;
 
     qwswl_pointer_state_t pointer_state;
@@ -99,6 +103,12 @@ void qwswl_shutdown(qwswl_state_t *state);
 int qwswl_run(qwswl_state_t *state);
 
 void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl);
+
+static inline bool compositor_is_likely_qt(qwswl_state_t *state) {
+    /* There might be an intended version to get the compositor name and
+     * version, but for now that's more than enough for us. */
+    return state->zqt_shell != NULL;
+}
 
 #ifdef __cplusplus
 }

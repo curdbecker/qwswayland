@@ -374,6 +374,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             break;
         }
 
+        qwswl_reorder_toplevels(cl);
         if (win->parent)
             qwswl_reorder_subsurfaces(cl, win->parent);
 
@@ -389,18 +390,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     }
 
     case QWS_CMD_REQUEST_FOCUS: {
-        /*
-         * There is not that much that we can do for the client here, since the
-         * compositor controls basically all user-related input in an (sometimes
-         * well-meaning, but a bit misguided IMHO) effort to protect the user
-         * from weird or intrusive behaviour by applications.
-         *
-         * For now we assume that a command without a related focus event will
-         * be considered by the client as a decline of the request.
-         * In doubt, we might need to force focus events for the currently
-         * focused seat device again to make sure that there is the same shared
-         * understanding?
-         */
+        qws_cmd_request_focus_t *cmd =
+            (qws_cmd_request_focus_t *)incoming_pkt->simple_data;
+        qwswl_window_t *win = qwswl_find_or_allocate_window(cl, cmd->window);
+        qwswl_request_focus(win);
         break;
     }
 

@@ -132,7 +132,7 @@ qwswl_client_window_get_first_toplevel_below(qwswl_client_t *client,
     bool next = false;
     for (c_each(it, qwswl_window_stack_t, client->window_stack)) {
         qwswl_window_t *it_win = *it.ref;
-        if (next && it_win->xdg_surface)
+        if (next && qwswl_win_is_toplevel(it_win))
             return *it.ref;
         if (*it.ref == win)
             next = true;
@@ -211,6 +211,24 @@ void qwswl_reorder_subsurfaces(qwswl_client_t *cl, qwswl_window_t *parent) {
         wl_subsurface_place_above(children[i]->wl_subsurface, below);
         below = children[i]->wl_surface;
     }
+}
+
+/* Re-establish Z-order for all Qt shell toplevel windows to match the logical
+ * window stack.  Mirrors qwswl_reorder_subsurfaces: collect toplevels in
+ * stack order (topmost first), then raise them bottom-to-top so the logically
+ * topmost window is raised last and ends up at the compositor front. */
+void qwswl_reorder_toplevels(qwswl_client_t *cl) {
+    qwswl_window_t *toplevels[WINDOW_MAX_CHILDREN];
+    int n = 0;
+    for (c_each(it, qwswl_window_stack_t, cl->window_stack)) {
+        qwswl_window_t *w = *it.ref;
+        if (w->zqt_shell_surface) {
+            assert(n < WINDOW_MAX_CHILDREN);
+            toplevels[n++] = w;
+        }
+    }
+    for (int i = n - 1; i >= 0; i--)
+        zqt_shell_surface_v1_raise(toplevels[i]->zqt_shell_surface);
 }
 
 void qwswl_stack_dump(const qwswl_client_t *client) {

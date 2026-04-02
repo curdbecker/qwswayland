@@ -161,6 +161,11 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
         QWS_TRACE(
             "registry: found wp_alpha_modifier_v1 (name=%u, max_version=%u)",
             name, version);
+    } else if (strcmp(interface, "zqt_shell_v1") == 0) {
+        state->zqt_shell =
+            wl_registry_bind(reg, name, &zqt_shell_v1_interface, 1);
+        QWS_TRACE("registry: found zqt_shell_v1 (name=%u, max_version=%u)",
+                  name, version);
     } else {
         QWS_TRACE("registry: skipped %s (name=%u, v=%u)", interface, name,
                   version);
@@ -230,8 +235,9 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
         return -1;
     }
 
-    if (!state->xdg_wm_base) {
-        fprintf(stderr, "[qwswayland] No xdg_wm_base found\n");
+    if (!state->xdg_wm_base && !state->zqt_shell) {
+        fprintf(stderr,
+                "[qwswayland] No supported window manager extension found\n");
         return -1;
     }
 
@@ -245,7 +251,9 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
                         "devices will be unavailable\n");
     }
 
-    xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener, NULL);
+    if (state->xdg_wm_base)
+        xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener,
+                                 NULL);
 
     /*
      * Apparently, the safer approach to register all listeners first and
@@ -417,6 +425,8 @@ void qwswl_shutdown(qwswl_state_t *state) {
         wl_seat_destroy(state->wl_seat);
     if (state->xdg_wm_base)
         xdg_wm_base_destroy(state->xdg_wm_base);
+    if (state->zqt_shell)
+        zqt_shell_v1_destroy(state->zqt_shell);
     if (state->wl_subcompositor)
         wl_subcompositor_destroy(state->wl_subcompositor);
     if (state->wl_shm)
