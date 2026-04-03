@@ -28,14 +28,14 @@ typedef struct qwswl_window {
 
     /* Wayland objects */
     struct wl_surface *wl_surface;
-    /* Toplevel windows use xdg_surface + xdg_toplevel.
-     * Child windows use wl_subsurface instead — xdg_surface/toplevel are NULL.
-     */
+    struct wl_subsurface *wl_subsurface;
+
+    /* Toplevel shell window protocols
+     * always NULL for child windows */
+    /* XDG shell surface */
     struct xdg_surface *xdg_surface;
     struct xdg_toplevel *xdg_toplevel;
-    struct wl_subsurface *wl_subsurface;
-    /* Qt-specific shell surface (optional, may be NULL if compositor lacks
-     * zqt_shell_v1 or this is a child window). */
+    /* Qt-specific shell surface */
     struct zqt_shell_surface_v1 *zqt_shell_surface;
 
     qwswl_window_t *parent;
@@ -75,7 +75,8 @@ typedef struct qwswl_window {
     char *caption;
     uint8_t opacity;
     qws_window_flags_t win_flags;
-    bool on_top; /* true while window holds STAYS_ON_TOP altitude */
+    bool on_top;  /* true while window holds STAYS_ON_TOP altitude */
+    bool focused; /* current focus state; used by qwswl_window_set_focus */
 } qwswl_window_t;
 
 /* Allocate a window with a caller-supplied ID (for lazy/on-demand creation). */
@@ -100,6 +101,11 @@ void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);
  * compositor exposing the zqt_shell_v1 protocol the request is forwarded
  * directly, giving the same degree of control as QWS. */
 void qwswl_request_focus(qwswl_window_t *win);
+
+/* Update the window's focus state and emit a QWS focus event if it changed.
+ * from_seat distinguishes seat events from shell callbacks; XDG windows ignore
+ * seat-sourced focus loss in favour of the compositor's ACTIVATED signal. */
+void qwswl_window_set_focus(qwswl_window_t *win, bool focused, bool from_seat);
 
 /* Apply a QWS opacity value (0–255) to the surface via wp_alpha_modifier.
  * Creates the alpha_modifier_surface on first call; emits a warning and
@@ -139,7 +145,7 @@ static inline bool qwswl_win_is_toplevel(const qwswl_window_t *win) {
 }
 
 /* -----------------------------------------------------------
- * Hash-table + lookup helpers
+ * Lookup helpers
  * ----------------------------------------------------------- */
 
 /* Resolve a Wayland surface to its in-use QWS window. */

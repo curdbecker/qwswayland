@@ -29,6 +29,15 @@
 #include "qt-shell-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
+/* Focus-event emission lives in proxy.c (QWS communication hub), which is
+ * the central place for all QWS client I/O. Declared extern here rather
+ * than via a header inclusion to keep the cross-module coupling explicit
+ * and intentional — not silently importable from any header. The cleaner
+ * long-term solution would be an internal event/signal mechanism (like Qt's
+ * signal/slot), but that overhead is not justified at the current project
+ * stage. */
+extern void qwswl_emit_focus_event(qwswl_window_t *win, bool focused);
+
 /* ================================================================
  * xdg-shell surface/toplevel listeners
  * ================================================================ */
@@ -46,11 +55,21 @@ const struct xdg_surface_listener xdg_surface_listener = {
 static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
                                    int32_t width, int32_t height,
                                    struct wl_array *states) {
-    (void)data;
+    qwswl_window_t *win = (qwswl_window_t *)data;
     (void)toplevel;
-    (void)states;
     /* width/height of 0 means "compositor defers to the client" */
     assert(width == 0 && height == 0);
+
+    bool now_focused = false;
+    uint32_t *s;
+    wl_array_for_each(s, states) {
+        if (*s == XDG_TOPLEVEL_STATE_ACTIVATED) {
+            now_focused = true;
+            break;
+        }
+    }
+
+    qwswl_window_set_focus(win, now_focused, false);
 }
 
 static void xdg_toplevel_close(void *data, struct xdg_toplevel *toplevel) {
@@ -896,6 +915,20 @@ void qwswl_request_focus(qwswl_window_t *win) {
      * ask the compositor to activate the surface. */
     if (win->zqt_shell_surface)
         zqt_shell_surface_v1_request_activate(win->zqt_shell_surface);
+}
+
+void qwswl_window_set_focus(qwswl_window_t *win, bool focused, bool from_seat) {
+    /* For XDG windows, the compositor signals deactivation explicitly via
+     * xdg_toplevel_configure (ACTIVATED absent). A seat leave event does not
+     * necessarily mean the window is fully deactivated (e.g. focus may be
+     * moving to a sub-surface or a popup), so suppress seat-sourced unfocus
+     * for XDG windows. Seat-sourced focus gain is still accepted. */
+    if (from_seat && !focused && win->xdg_toplevel)
+        return;
+    if (win->focused == focused)
+        return;
+    win->focused = focused;
+    qwswl_emit_focus_event(win, focused);
 }
 
 /* -----------------------------------------------------------

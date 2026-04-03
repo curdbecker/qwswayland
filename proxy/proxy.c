@@ -106,6 +106,16 @@ static void send_max_region_event(qwswl_state_t *state, qwswl_client_t *cl) {
     qws_write_packet(cl->fd, evt);
 }
 
+void qwswl_emit_focus_event(qwswl_window_t *win, bool focused) {
+    qwswl_client_t *cl = win->client;
+    qws_focus_flag_t flag = focused ? QWS_FOCUS_GAIN : QWS_FOCUS_LOSE;
+    qws_packet_t *evt = qws_make_focus_event(win->qws_id, flag);
+    assert(evt);
+    qws_trace_packet(cl->client_id, evt, true);
+    qws_write_packet(cl->fd, evt);
+    qws_packet_free(evt);
+}
+
 void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
                             qws_packet_t *incoming_pkt) {
     assert(incoming_pkt);

@@ -184,6 +184,9 @@ static void pointer_button(void *data, struct wl_pointer *ptr, uint32_t serial,
               btn_state ? "press" : "release", win->qws_id, qt_state);
 #endif
 
+    if (btn_state && pstate->win)
+        qwswl_window_set_focus(pstate->win, true, true);
+
     pstate->button_state = qt_state;
     pstate->serial = serial;
 
@@ -396,14 +399,6 @@ static uint32_t qwswl_xkb_modifiers(struct xkb_state *state) {
     return mods;
 }
 
-static void send_focus_event(qwswl_window_t *win, qws_focus_flag_t flag) {
-    qwswl_client_t *cl = win->client;
-    qws_packet_t *evt = qws_make_focus_event(win->qws_id, flag);
-    assert(evt);
-    qws_trace_packet(cl->client_id, evt, true);
-    qws_write_packet(cl->fd, evt);
-    qws_packet_free(evt);
-}
 
 static void kbd_repeat_disarm(qwswl_keyboard_state_t *kbd_state) {
     if (kbd_state->repeat_timerfd < 0)
@@ -465,7 +460,7 @@ static void keyboard_enter(void *data, struct wl_keyboard *kbd, uint32_t serial,
         xkb_state_update_key(kbd_state->xkb_state, (*k) + 8, XKB_KEY_DOWN);
     }
 
-    send_focus_event(win, QWS_FOCUS_GAIN);
+    qwswl_window_set_focus(win, true, true);
 }
 
 static void keyboard_leave(void *data, struct wl_keyboard *kbd, uint32_t serial,
@@ -481,7 +476,7 @@ static void keyboard_leave(void *data, struct wl_keyboard *kbd, uint32_t serial,
     if (!win)
         return;
 
-    send_focus_event(win, QWS_FOCUS_LOSE);
+    qwswl_window_set_focus(win, false, true);
 }
 
 static void keyboard_key(void *data, struct wl_keyboard *kbd, uint32_t serial,
