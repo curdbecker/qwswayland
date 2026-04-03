@@ -563,7 +563,7 @@ int qwswl_run(qwswl_state_t *state) {
      * that happened on the qws client sockets.
      *
      * The neat thing here is that an epoll fd is actually epoll-able itself,
-     * so we do not have to poll separately on the chance the are QWS events,
+     * so we do not have to poll separately on the chance there are QWS events,
      * but only if we are know that there must be events from our first epoll.
      * */
 

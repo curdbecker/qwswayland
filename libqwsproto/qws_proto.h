@@ -96,8 +96,6 @@ enum qws_event_type {
 /* -----------------------------------------------------------
  * QWS Command types (client → server)
  * Values derived from QWSCommand::Type in Qt 4.8
- * The command enum starts where events leave off,
- * using a base offset of 0x100.
  * ----------------------------------------------------------- */
 
 enum qws_command_type {
