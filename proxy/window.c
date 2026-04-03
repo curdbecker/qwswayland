@@ -55,8 +55,8 @@ const struct xdg_surface_listener xdg_surface_listener = {
 static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
                                    int32_t width, int32_t height,
                                    struct wl_array *states) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    (void)toplevel;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+    qwswl_window_t *win = xdg_toplevel_get_user_data(toplevel);
     /* width/height of 0 means "compositor defers to the client" */
     assert(width == 0 && height == 0);
 
@@ -69,7 +69,7 @@ static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
         }
     }
 
-    qwswl_window_set_focus(win, now_focused, false);
+    qwswl_window_set_focus(state, win, now_focused, false);
 }
 
 static void xdg_toplevel_close(void *data, struct xdg_toplevel *toplevel) {
@@ -108,8 +108,8 @@ static void qt_shell_surface_resize(void *data,
                                     struct zqt_shell_surface_v1 *surface,
                                     uint32_t serial, int32_t width,
                                     int32_t height) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    (void)surface;
+    qwswl_window_t *win = zqt_shell_surface_v1_get_user_data(surface);
+    (void)data;
     QWS_TRACE("qt_shell: resize win=%d serial=%u %dx%d", win->qws_id, serial,
               width, height);
 }
@@ -118,8 +118,8 @@ static void qt_shell_surface_set_position(void *data,
                                           struct zqt_shell_surface_v1 *surface,
                                           uint32_t serial, int32_t x,
                                           int32_t y) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    (void)surface;
+    qwswl_window_t *win = zqt_shell_surface_v1_get_user_data(surface);
+    (void)data;
     QWS_TRACE("qt_shell: set_position win=%d serial=%u %d,%d", win->qws_id,
               serial, x, y);
 }
@@ -128,8 +128,8 @@ static void
 qt_shell_surface_set_window_state(void *data,
                                   struct zqt_shell_surface_v1 *surface,
                                   uint32_t serial, uint32_t state) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    (void)surface;
+    qwswl_window_t *win = zqt_shell_surface_v1_get_user_data(surface);
+    (void)data;
     QWS_TRACE("qt_shell: set_window_state win=%d serial=%u state=0x%x",
               win->qws_id, serial, state);
 }
@@ -137,7 +137,8 @@ qt_shell_surface_set_window_state(void *data,
 static void qt_shell_surface_configure(void *data,
                                        struct zqt_shell_surface_v1 *surface,
                                        uint32_t serial) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
+    qwswl_window_t *win = zqt_shell_surface_v1_get_user_data(surface);
+    (void)data;
     QWS_TRACE("qt_shell: configure win=%d serial=%u -> ack", win->qws_id,
               serial);
     zqt_shell_surface_v1_ack_configure(surface, serial);
@@ -146,23 +147,23 @@ static void qt_shell_surface_configure(void *data,
 static void qt_shell_surface_set_frame_margins(
     void *data, struct zqt_shell_surface_v1 *surface, uint32_t left,
     uint32_t right, uint32_t top, uint32_t bottom) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    (void)surface;
+    qwswl_window_t *win = zqt_shell_surface_v1_get_user_data(surface);
+    (void)data;
     QWS_TRACE("qt_shell: set_frame_margins win=%d l=%u r=%u t=%u b=%u",
               win->qws_id, left, right, top, bottom);
 }
 
 static void qt_shell_surface_close(void *data,
                                    struct zqt_shell_surface_v1 *surface) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    (void)surface;
+    qwswl_window_t *win = zqt_shell_surface_v1_get_user_data(surface);
+    (void)data;
     QWS_TRACE("qt_shell: close win=%d", win->qws_id);
 }
 
 static void qt_shell_surface_set_capabilities(
     void *data, struct zqt_shell_surface_v1 *surface, uint32_t capabilities) {
-    qwswl_window_t *win = (qwswl_window_t *)data;
-    (void)surface;
+    qwswl_window_t *win = zqt_shell_surface_v1_get_user_data(surface);
+    (void)data;
     QWS_TRACE("qt_shell: set_capabilities win=%d caps=0x%x", win->qws_id,
               capabilities);
 }
@@ -698,8 +699,9 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
         if (state->zqt_shell) {
             win->zqt_shell_surface =
                 zqt_shell_v1_surface_create(state->zqt_shell, win->wl_surface);
-            zqt_shell_surface_v1_add_listener(win->zqt_shell_surface,
-                                              &qt_shell_surface_listener, win);
+            zqt_shell_surface_v1_add_listener(
+                win->zqt_shell_surface, &qt_shell_surface_listener, state);
+            zqt_shell_surface_v1_set_user_data(win->zqt_shell_surface, win);
             zqt_shell_surface_v1_set_size(win->zqt_shell_surface,
                                           win->geometry.width,
                                           win->geometry.height);
@@ -730,9 +732,11 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
                                                            win->wl_surface);
             win->xdg_toplevel = xdg_surface_get_toplevel(win->xdg_surface);
             xdg_surface_add_listener(win->xdg_surface, &xdg_surface_listener,
-                                     win);
+                                     state);
             xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener,
-                                      win);
+                                      state);
+            xdg_toplevel_set_user_data(win->xdg_toplevel,
+                                       win); /* correlate back to win */
         }
     } else {
         /* Child window: attach as a subsurface of the root toplevel.
@@ -763,6 +767,9 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
 
 void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win) {
     assert(win);
+
+    if (state->focused_window == win)
+        state->focused_window = NULL;
 
     fprintf(stderr, "[qwswayland] Destroying window %d\n", win->qws_id);
 
@@ -917,17 +924,27 @@ void qwswl_request_focus(qwswl_window_t *win) {
         zqt_shell_surface_v1_request_activate(win->zqt_shell_surface);
 }
 
-void qwswl_window_set_focus(qwswl_window_t *win, bool focused, bool from_seat) {
-    /* For XDG windows, the compositor signals deactivation explicitly via
-     * xdg_toplevel_configure (ACTIVATED absent). A seat leave event does not
-     * necessarily mean the window is fully deactivated (e.g. focus may be
-     * moving to a sub-surface or a popup), so suppress seat-sourced unfocus
-     * for XDG windows. Seat-sourced focus gain is still accepted. */
+void qwswl_window_set_focus(qwswl_state_t *state, qwswl_window_t *win,
+                            bool focused, bool from_seat) {
+    /* For XDG windows the compositor signals deactivation explicitly via
+     * xdg_toplevel_configure (ACTIVATED absent). Seat leave events do not
+     * necessarily mean full deactivation, so suppress seat-sourced focus
+     * loss for XDG windows. */
     if (from_seat && !focused && win->xdg_toplevel)
         return;
-    if (win->focused == focused)
-        return;
-    win->focused = focused;
+
+    if (focused) {
+        if (state->focused_window == win)
+            return;
+        /* Focus gain is sufficient — QWS clients treat it as an implicit
+         * LOSE for any previously focused window, so no explicit LOSE needed.
+         */
+        state->focused_window = win;
+    } else {
+        if (state->focused_window != win)
+            return;
+        state->focused_window = NULL;
+    }
     qwswl_emit_focus_event(win, focused);
 }
 

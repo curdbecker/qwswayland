@@ -75,8 +75,7 @@ typedef struct qwswl_window {
     char *caption;
     uint8_t opacity;
     qws_window_flags_t win_flags;
-    bool on_top;  /* true while window holds STAYS_ON_TOP altitude */
-    bool focused; /* current focus state; used by qwswl_window_set_focus */
+    bool on_top; /* true while window holds STAYS_ON_TOP altitude */
 } qwswl_window_t;
 
 /* Allocate a window with a caller-supplied ID (for lazy/on-demand creation). */
@@ -102,10 +101,10 @@ void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption);
  * directly, giving the same degree of control as QWS. */
 void qwswl_request_focus(qwswl_window_t *win);
 
-/* Update the window's focus state and emit a QWS focus event if it changed.
- * from_seat distinguishes seat events from shell callbacks; XDG windows ignore
- * seat-sourced focus loss in favour of the compositor's ACTIVATED signal. */
-void qwswl_window_set_focus(qwswl_window_t *win, bool focused, bool from_seat);
+/* Update focused_window in state and emit QWS focus events.
+ * from_seat suppresses seat-sourced focus loss on XDG windows. */
+void qwswl_window_set_focus(qwswl_state_t *state, qwswl_window_t *win,
+                            bool focused, bool from_seat);
 
 /* Apply a QWS opacity value (0–255) to the surface via wp_alpha_modifier.
  * Creates the alpha_modifier_surface on first call; emits a warning and

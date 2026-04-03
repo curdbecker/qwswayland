@@ -185,7 +185,7 @@ static void pointer_button(void *data, struct wl_pointer *ptr, uint32_t serial,
 #endif
 
     if (btn_state && pstate->win)
-        qwswl_window_set_focus(pstate->win, true, true);
+        qwswl_window_set_focus(state, pstate->win, true, true);
 
     pstate->button_state = qt_state;
     pstate->serial = serial;
@@ -460,7 +460,7 @@ static void keyboard_enter(void *data, struct wl_keyboard *kbd, uint32_t serial,
         xkb_state_update_key(kbd_state->xkb_state, (*k) + 8, XKB_KEY_DOWN);
     }
 
-    qwswl_window_set_focus(win, true, true);
+    qwswl_window_set_focus(state, win, true, true);
 }
 
 static void keyboard_leave(void *data, struct wl_keyboard *kbd, uint32_t serial,
@@ -476,7 +476,7 @@ static void keyboard_leave(void *data, struct wl_keyboard *kbd, uint32_t serial,
     if (!win)
         return;
 
-    qwswl_window_set_focus(win, false, true);
+    qwswl_window_set_focus(state, win, false, true);
 }
 
 static void keyboard_key(void *data, struct wl_keyboard *kbd, uint32_t serial,

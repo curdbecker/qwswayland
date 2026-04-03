@@ -81,6 +81,10 @@ typedef struct qwswl_state {
     qwswl_pointer_state_t pointer_state;
     qwswl_keyboard_state_t kbd_state;
 
+    /* Currently focused window. Single-screen assumption: with multiple screens
+     * each screen would need its own slot. */
+    qwswl_window_t *focused_window;
+
     /* Event loop */
     bool running;
     int qws_epoll_fd;
