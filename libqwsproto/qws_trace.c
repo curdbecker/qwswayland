@@ -74,6 +74,19 @@ static bool parse_filter_list(const char *list, uint64_t *out) {
         }
         if (!matched) {
             fprintf(stderr, "Warning: unknown packet type name '%s'\n", tok);
+            fprintf(stderr, "Available commands:");
+            for (int i = 0; i < 32; i++) {
+                const char *n = qws_command_type_name(i);
+                if (strcmp(n, "Unknown") != 0)
+                    fprintf(stderr, " %s", n);
+            }
+            fprintf(stderr, "\nAvailable events:");
+            for (int i = 0; i < QWS_EVT_NEVENT; i++) {
+                const char *n = qws_event_type_name(i);
+                if (strcmp(n, "Unknown") != 0)
+                    fprintf(stderr, " %s", n);
+            }
+            fprintf(stderr, "\n");
             ok = false;
             break;
         }
