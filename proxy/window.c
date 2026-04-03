@@ -707,6 +707,9 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
                                           win->geometry.height);
             zqt_shell_surface_v1_reposition(win->zqt_shell_surface,
                                             win->geometry.x, win->geometry.y);
+            if (win->caption)
+                zqt_shell_surface_v1_set_window_title(win->zqt_shell_surface,
+                                                      win->caption);
 
             /*
              * It is kind of paradox that when we finally have basically the
@@ -720,8 +723,8 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
              * does, and we do not seem to have a non-intrusive way to turn it
              * off on the client-side.
              */
-            zqt_shell_surface_v1_set_window_flags(win->zqt_shell_surface,
-                                                  QWS_WF_FRAMELESS);
+            zqt_shell_surface_v1_set_window_flags(
+                win->zqt_shell_surface, QWS_WF_FRAMELESS | QWS_WF_TITLE);
             //   win->win_flags);
         } else {
             /* Toplevel window: wrap in xdg_surface + xdg_toplevel.
@@ -737,6 +740,8 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
                                       state);
             xdg_toplevel_set_user_data(win->xdg_toplevel,
                                        win); /* correlate back to win */
+            if (win->caption)
+                xdg_toplevel_set_title(win->xdg_toplevel, win->caption);
         }
     } else {
         /* Child window: attach as a subsurface of the root toplevel.
