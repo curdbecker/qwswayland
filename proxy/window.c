@@ -475,6 +475,7 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
      * already existing region will actually reset the offsets...
      */
     int32_t old_x = win->geometry.x, old_y = win->geometry.y;
+    int32_t old_width = win->geometry.width, old_height = win->geometry.height;
     int32_t min_x1, min_y1, max_x2, max_y2;
     qws_rect_bounding_box(rects, nrects, &min_x1, &min_y1, &max_x2, &max_y2);
     win->geometry.x = min_x1;
@@ -494,34 +495,20 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
     if (win->parent)
         position_window_relative_to_parent(win);
 
-    int32_t visible_width = win->geometry.width,
-            visible_height = win->geometry.height;
-    if (compositor_is_likely_qt(state)) {
-        if (win->zqt_shell_surface) {
-            if (old_x != win->geometry.x || old_y != win->geometry.y)
-                zqt_shell_surface_v1_reposition(
-                    win->zqt_shell_surface, win->geometry.x, win->geometry.y);
-            zqt_shell_surface_v1_set_size(win->zqt_shell_surface, visible_width,
-                                          visible_height);
-        }
-    } else {
-        qws_rect_t *translated_rects =
-            qws_rect_clone(win->geometry.rects, win->geometry.nrects);
-        assert(translated_rects);
-        qws_clip_rects(translated_rects, win->geometry.nrects,
-                       state->screen_width - 1, state->screen_height - 1);
-
-        qws_rect_bounding_box(translated_rects, win->geometry.nrects, &min_x1,
-                              &min_y1, &max_x2, &max_y2);
-        visible_width = max_x2 - min_x1 + 1;
-        visible_height = max_y2 - min_y1 + 1;
-
-        free(translated_rects);
+    if (win->zqt_shell_surface) {
+        if (old_x != win->geometry.x || old_y != win->geometry.y)
+            zqt_shell_surface_v1_reposition(win->zqt_shell_surface,
+                                            win->geometry.x, win->geometry.y);
+        if (old_width != win->geometry.width ||
+            old_height != win->geometry.height)
+            zqt_shell_surface_v1_set_size(win->zqt_shell_surface,
+                                          win->geometry.width,
+                                          win->geometry.height);
     }
 
     /* we may need to resize/create the buffer as well */
-    assert(qwswl_create_or_update_buffer(state, win, visible_width,
-                                         visible_height) == 0);
+    assert(qwswl_create_or_update_buffer(state, win, win->geometry.width,
+                                         win->geometry.height) == 0);
 }
 
 bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win, int32_t dx,
