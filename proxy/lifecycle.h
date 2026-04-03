@@ -30,6 +30,9 @@ extern "C" {
 typedef struct qwswl_client qwswl_client_t;
 declare_hashmap(qwswl_client_map_t, int32_t, qwswl_client_t *);
 
+/* Forward declaration; qwswl_window_t is defined in window.h */
+typedef struct qwswl_window qwswl_window_t;
+
 /* -----------------------------------------------------------
  * Main proxy state
  * ----------------------------------------------------------- */
@@ -60,6 +63,7 @@ typedef struct qwswl_state {
     struct wl_compositor *wl_compositor;
     struct wl_shm *wl_shm;
     struct wl_seat *wl_seat;
+    uint32_t wl_seat_name; /* registry name for dynamic add/remove matching */
     struct wl_pointer *wl_pointer;
     struct wl_keyboard *wl_keyboard;
     struct wl_output *wl_output;

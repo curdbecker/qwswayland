@@ -138,6 +138,8 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
     } else if (strcmp(interface, "wl_seat") == 0) {
         state->wl_seat =
             wl_registry_bind(reg, name, &wl_seat_interface, version);
+        state->wl_seat_name = name;
+        wl_seat_add_listener(state->wl_seat, &seat_listener, state);
         QWS_TRACE("registry: found wl_seat (name=%u, max_version=%u)", name,
                   version);
     } else if (strcmp(interface, "wl_output") == 0) {
@@ -172,11 +174,39 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
     }
 }
 
+static void seat_teardown(qwswl_state_t *state) {
+    if (state->wl_pointer) {
+        wl_pointer_destroy(state->wl_pointer);
+        state->wl_pointer = NULL;
+    }
+    if (state->kbd_state.xkb_state) {
+        xkb_state_unref(state->kbd_state.xkb_state);
+        state->kbd_state.xkb_state = NULL;
+    }
+    if (state->kbd_state.xkb_keymap) {
+        xkb_keymap_unref(state->kbd_state.xkb_keymap);
+        state->kbd_state.xkb_keymap = NULL;
+    }
+    if (state->wl_keyboard) {
+        wl_keyboard_destroy(state->wl_keyboard);
+        state->wl_keyboard = NULL;
+    }
+    if (state->wl_seat) {
+        wl_seat_destroy(state->wl_seat);
+        state->wl_seat = NULL;
+    }
+    state->wl_seat_name = 0;
+}
+
 static void registry_global_remove(void *data, struct wl_registry *reg,
                                    uint32_t name) {
-    (void)data;
     (void)reg;
-    (void)name;
+    qwswl_state_t *state = (qwswl_state_t *)data;
+
+    if (name == state->wl_seat_name && state->wl_seat) {
+        QWS_TRACE("registry: wl_seat removed (name=%u)", name);
+        seat_teardown(state);
+    }
 }
 
 static const struct wl_registry_listener registry_listener = {
@@ -243,13 +273,9 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
 
     wl_output_add_listener(state->wl_output, &wl_output_listener, state);
 
-    /* Add seat listener if we got a seat. */
-    if (state->wl_seat) {
-        wl_seat_add_listener(state->wl_seat, &seat_listener, state);
-    } else {
-        fprintf(stderr, "[qwswayland] WARNING: No wl_seat found - input "
-                        "devices will be unavailable\n");
-    }
+    if (!state->wl_seat)
+        fprintf(stderr, "init: no wl_seat at startup: input devices currently "
+                        "unavailable - will try to bind on registry event\n");
 
     if (state->xdg_wm_base)
         xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener,
@@ -329,8 +355,8 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
 
         /*
          * The shared cursor position is accessible via the global variables
-         * `qt_last_x` and `qt_last_y` - see for instance their initialisation
-         * in `src/gui/kernel/qapplication_qws.cpp:921`.
+         * `qt_last_x` and `qt_last_y` - see for instance their
+         * initialisation in `src/gui/kernel/qapplication_qws.cpp:921`.
          *
          * We (hopefully) calculate the same pointers here.
          */
@@ -411,18 +437,9 @@ void qwswl_shutdown(qwswl_state_t *state) {
         close(state->loop_epoll_fd);
 
     /* Clean up Wayland */
-    if (state->wl_pointer)
-        wl_pointer_destroy(state->wl_pointer);
-    if (state->kbd_state.xkb_state)
-        xkb_state_unref(state->kbd_state.xkb_state);
-    if (state->kbd_state.xkb_keymap)
-        xkb_keymap_unref(state->kbd_state.xkb_keymap);
-    if (state->wl_keyboard)
-        wl_keyboard_destroy(state->wl_keyboard);
+    seat_teardown(state);
     if (state->xkb_context)
         xkb_context_unref(state->xkb_context);
-    if (state->wl_seat)
-        wl_seat_destroy(state->wl_seat);
     if (state->xdg_wm_base)
         xdg_wm_base_destroy(state->xdg_wm_base);
     if (state->zqt_shell)
