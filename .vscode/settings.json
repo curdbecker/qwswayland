@@ -32,6 +32,7 @@
         "qtembedded",
         "qtwayland",
         "qwlclientbuffer",
+        "QWS",
         "qwscommand",
         "qwslock",
         "qwsproto",

@@ -606,41 +606,6 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
         int32_t copy_w = translated_rects[i].x2 - translated_rects[i].x1 + 1;
         int32_t copy_h = translated_rects[i].y2 - translated_rects[i].y1 + 1;
 
-        /*
-         * Some deeper debugging in order to quickly find out what the actual
-         * issue would cause a buffer under- or overflow.
-         *
-         * We use this ugly-ish define here (thanks Claude btw), so that we can
-         * simply disable the assert during debugging nd still observe the
-         * buffer issues while interacting with the windows.
-         *
-         * Often this also leads to interesting clues regarding what window
-         * areas are not drawn - or what rect areas are missing when rect
-         * drawing debugging is enabled below.
-         */
-#define DBG_RECT_ASSERT(cond)                                                  \
-    do {                                                                       \
-        if (cond) {                                                            \
-            QWS_TRACE("update_surface skip rect[%d]: " #cond                   \
-                      " (copy_x=%d copy_y=%d copy_w=%d copy_h=%d "             \
-                      "server_w=%d server_h=%d)",                              \
-                      i, copy_x, copy_y, copy_w, copy_h,                       \
-                      win->server_shm.width, win->server_shm.height);          \
-            assert(!(cond));                                                   \
-        }                                                                      \
-    } while (0)
-        DBG_RECT_ASSERT(copy_x < 0);
-        DBG_RECT_ASSERT(copy_y < 0);
-        DBG_RECT_ASSERT(copy_w < 0);
-        DBG_RECT_ASSERT(copy_h < 0);
-        DBG_RECT_ASSERT(copy_x >= win->server_shm.width);
-        DBG_RECT_ASSERT(copy_y >= win->server_shm.height);
-        DBG_RECT_ASSERT(copy_w > win->server_shm.width);
-        DBG_RECT_ASSERT(copy_h > win->server_shm.height);
-        DBG_RECT_ASSERT((copy_x + copy_w) > win->server_shm.width);
-        DBG_RECT_ASSERT((copy_y + copy_h) > win->server_shm.height);
-#undef DBG_RECT_ASSERT
-
         int32_t row_offset = copy_x * bytes_per_pixel;
         int32_t row_bytes = win->server_shm.width * bytes_per_pixel;
 
