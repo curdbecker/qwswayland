@@ -494,8 +494,17 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
     if (win->parent)
         position_window_relative_to_parent(win);
 
-    int32_t visible_width, visible_height;
-    {
+    int32_t visible_width = win->geometry.width,
+            visible_height = win->geometry.height;
+    if (compositor_is_likely_qt(state)) {
+        if (win->zqt_shell_surface) {
+            if (old_x != win->geometry.x || old_y != win->geometry.y)
+                zqt_shell_surface_v1_reposition(
+                    win->zqt_shell_surface, win->geometry.x, win->geometry.y);
+            zqt_shell_surface_v1_set_size(win->zqt_shell_surface, visible_width,
+                                          visible_height);
+        }
+    } else {
         qws_rect_t *translated_rects =
             qws_rect_clone(win->geometry.rects, win->geometry.nrects);
         assert(translated_rects);
@@ -507,20 +516,12 @@ void qwswl_update_geometry(qwswl_state_t *state, qwswl_window_t *win,
         visible_width = max_x2 - min_x1 + 1;
         visible_height = max_y2 - min_y1 + 1;
 
-        /* we may need to resize/create the buffer as well */
-        assert(qwswl_create_or_update_buffer(state, win, visible_width,
-                                             visible_height) == 0);
         free(translated_rects);
     }
 
-    if (win->zqt_shell_surface) {
-        if (old_x != win->geometry.x || old_y != win->geometry.y)
-            zqt_shell_surface_v1_reposition(win->zqt_shell_surface,
-                                            win->geometry.x, win->geometry.y);
-        zqt_shell_surface_v1_set_size(win->zqt_shell_surface,
-                                      win->server_shm.width,
-                                      win->server_shm.height);
-    }
+    /* we may need to resize/create the buffer as well */
+    assert(qwswl_create_or_update_buffer(state, win, visible_width,
+                                         visible_height) == 0);
 }
 
 bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win, int32_t dx,
@@ -731,6 +732,8 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
             zqt_shell_surface_v1_set_size(win->zqt_shell_surface,
                                           win->geometry.width,
                                           win->geometry.height);
+            zqt_shell_surface_v1_reposition(win->zqt_shell_surface,
+                                            win->geometry.x, win->geometry.y);
 
             /*
              * It is kind of paradox that when we finally have basically the
@@ -925,17 +928,20 @@ void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption) {
 
 void qwswl_request_focus(qwswl_window_t *win) {
     /*
-     * With a generic Wayland compositor there is not much we can do here:
-     * the compositor controls all user-related input (sometimes well-meaning,
-     * but a bit misguided IMHO) to protect the user from weird or intrusive
-     * behaviour by applications.  A request_focus command without a related
-     * focus event will therefore be treated by the client as a decline.
+     * With out specific Wayland compositor-support on their and our end,
+     * there is not much we can do here in general:
+
+     * The compositor controls all user-related input (an attempt that is
+     * generally well-meaning, but sometimes a bit misguided, almost bordering
+     * on overreaching IMHO) to protect the user from weird or intrusive
+     * behaviour by applications. A request_focus command without a related
+     * focus event is likely going to be interpreted by the client as a decline.
      *
-     * However, when Qt Wayland is the compositor on the other end, then
-     * the private QtShell protocol — QWS's spiritual successor — offers us
-     * basically the same degree of control as QWS did before and we can
-     * directly ask the compositor to activate the surface.
-     */
+     * However, when Qt Wayland is the compositor on the other end, the private
+     * QtShell protocol — QWS's spiritual and de-facto successor — offers us
+     * exactly what we need, so that we can basically again get the same
+     * degree of control as QWS clients did before and we can now explicitly
+     * ask the compositor to activate the surface. */
     if (win->zqt_shell_surface)
         zqt_shell_surface_v1_request_activate(win->zqt_shell_surface);
 }
