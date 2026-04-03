@@ -102,7 +102,6 @@ enum qws_command_type {
     /*
      * Exact match of QWSCommand::Type from qwscommand_qws_p.h.
      * Commands flow client→server, events flow server→client.
-     * Both enums start at 0 independently.
      */
     QWS_CMD_UNKNOWN = 0,
     QWS_CMD_CREATE = 1,
@@ -571,7 +570,6 @@ typedef struct {
 /* QWS_CMD_DEFINE_CURSOR
  * rawData = cursor image data */
 typedef struct {
-    int32_t window;
     int32_t width;
     int32_t height;
     int32_t hot_x;

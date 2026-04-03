@@ -482,7 +482,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     default:
         fprintf(stderr, "[qwswayland] Unhandled command 0x%x from client %d\n",
                 type, cl->client_id);
-        // assert(false);
+        assert(false);
         break;
     }
 

@@ -800,10 +800,9 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
         if (simple_len >= (int32_t)sizeof(qws_cmd_define_cursor_t)) {
             const qws_cmd_define_cursor_t *d = simple_data;
             fprintf(fp,
-                    "      window=%d, size=%dx%d, hot=(%d,%d), id=%d, "
+                    "      size=%dx%d, hot=(%d,%d), id=%d, "
                     "data_len=%d\n",
-                    d->window, d->width, d->height, d->hot_x, d->hot_y, d->id,
-                    raw_len);
+                    d->width, d->height, d->hot_x, d->hot_y, d->id, raw_len);
         }
         break;
     }
