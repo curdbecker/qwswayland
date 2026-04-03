@@ -917,6 +917,19 @@ const char *qws_altitude_name(int altitude) {
     }
 }
 
+const char *qws_prop_mode_name(int mode) {
+    switch (mode) {
+    case QWS_PROP_REPLACE:
+        return "Replace";
+    case QWS_PROP_PREPEND:
+        return "Prepend";
+    case QWS_PROP_APPEND:
+        return "Append";
+    default:
+        return "Unknown";
+    }
+}
+
 bool qws_is_synchronous_command(int type) {
     switch (type) {
     case QWS_CMD_CHANGE_ALTITUDE:

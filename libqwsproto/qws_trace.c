@@ -462,7 +462,16 @@ void qws_trace_decode_event(FILE *fp, int32_t type, const void *simple_data,
     case QWS_EVT_EMBED: {
         if (simple_len >= (int32_t)sizeof(qws_evt_embed_t)) {
             const qws_evt_embed_t *d = simple_data;
-            fprintf(fp, "      window=%d, type=%d\n", d->window, d->type);
+            fprintf(fp, "      window=%d, nrects=%d, type=%d\n", d->window,
+                    d->nrectangles, d->type);
+            if (raw_data && raw_len > 0) {
+                if (brief && d->nrectangles > 1)
+                    qws_trace_print_rects_bbox(fp, (qws_rect_t *)raw_data,
+                                               d->nrectangles);
+                else
+                    qws_trace_print_rects(fp, (qws_rect_t *)raw_data,
+                                          d->nrectangles);
+            }
         }
         break;
     }
@@ -747,11 +756,7 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
     case QWS_CMD_SET_PROPERTY: {
         if (simple_len >= (int32_t)sizeof(qws_cmd_set_property_t)) {
             const qws_cmd_set_property_t *d = simple_data;
-            const char *mode_str = "Replace";
-            if (d->mode == 1)
-                mode_str = "Append";
-            if (d->mode == 2)
-                mode_str = "Prepend";
+            const char *mode_str = qws_prop_mode_name(d->mode);
             fprintf(fp,
                     "      window=%d, property=%d, mode=%s, "
                     "value_len=%d\n",
@@ -817,7 +822,11 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
     }
 
     case QWS_CMD_QCOP_REGISTER: {
-        fprintf(fp, "      channel (in rawData, %d bytes)\n", raw_len);
+        if (simple_len >= (int32_t)sizeof(qws_cmd_qcop_register_t)) {
+            const qws_cmd_qcop_register_t *d = simple_data;
+            fprintf(fp, "      ch_len=%d\n", d->ch_len);
+            print_utf16le_field(fp, "channel", raw_data, (size_t)d->ch_len);
+        }
         break;
     }
 
@@ -845,8 +854,8 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
     case QWS_CMD_IM_MOUSE: {
         if (simple_len >= (int32_t)sizeof(qws_cmd_im_mouse_t)) {
             const qws_cmd_im_mouse_t *d = simple_data;
-            fprintf(fp, "      window=%d, index=%d, state=%d\n", d->window,
-                    d->index, d->state);
+            fprintf(fp, "      window=%d, state=%d, index=%d\n", d->window,
+                    d->state, d->index);
         }
         break;
     }

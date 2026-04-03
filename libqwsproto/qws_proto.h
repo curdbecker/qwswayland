@@ -403,9 +403,11 @@ typedef struct {
     int32_t existence; /* 1 = IM exists, 0 = destroyed */
 } qws_evt_im_init_t;
 
-/* QWS_EVT_EMBED */
+/* QWS_EVT_EMBED
+ * rawData = nrectangles × QRect (x, y, w, h as int32 each) */
 typedef struct {
     int32_t window;
+    int32_t nrectangles;
     int32_t type; /* cyclic enum values for embed ops */
 } qws_evt_embed_t;
 
@@ -519,12 +521,18 @@ typedef struct {
     int32_t property;
 } qws_cmd_add_property_t;
 
+typedef enum {
+    QWS_PROP_REPLACE = 0,
+    QWS_PROP_PREPEND = 1,
+    QWS_PROP_APPEND = 2,
+} qws_prop_mode_t;
+
 /* QWS_CMD_SET_PROPERTY
  * rawData = property value bytes */
 typedef struct {
     int32_t window;
     int32_t property;
-    int32_t mode; /* 0=Replace, 1=Append, 2=Prepend */
+    qws_prop_mode_t mode;
 } qws_cmd_set_property_t;
 
 /* QWS_CMD_REMOVE_PROPERTY */
@@ -538,6 +546,13 @@ typedef struct {
     int32_t window;
     int32_t property;
 } qws_cmd_get_property_t;
+
+/* Well-known QWS property IDs (Qt 4.8 qwsdisplay_qws.h / qclipboard_qws.cpp) */
+#define QWS_PROPERTY_SELECTION 0
+#define QWS_PROPERTY_MARKEDTEXT 997
+#define QWS_PROPERTY_WINDOWNAME 998
+#define QWS_PROPERTY_CONVERTSELECTION 999
+#define QWS_PROPERTY_TEXTCLIPBOARD 424242
 
 /* QWS_CMD_SET_SELECTION_OWNER (10) */
 typedef struct {
@@ -613,7 +628,7 @@ typedef struct {
 
 /* QWS_CMD_QCOP_REGISTER: rawData = channel name (UTF-16LE) */
 typedef struct {
-    int32_t dummy; /* unused, present for framing */
+    int32_t ch_len; /* character length of channel name in rawData */
 } qws_cmd_qcop_register_t;
 
 /* QWS_CMD_QCOP_SEND: rawData = channel + message + data */
@@ -638,17 +653,18 @@ typedef struct {
     int32_t widget_id;
 } qws_cmd_im_update_t;
 
-/* QWS_CMD_IM_RESPONSE */
+/* QWS_CMD_IM_RESPONSE
+ * rawData = QDataStream-serialized QVariant */
 typedef struct {
     int32_t window;
-    int32_t type;
+    int32_t property;
 } qws_cmd_im_response_t;
 
 /* QWS_CMD_IM_MOUSE */
 typedef struct {
     int32_t window;
-    int32_t index;
     int32_t state; /* IMMouse enum value */
+    int32_t index;
 } qws_cmd_im_mouse_t;
 
 /* Embed operation type (QWSEmbedCommand::Type) */
@@ -868,6 +884,7 @@ const char *qws_image_format_name(int format);
 const char *qws_surface_flag_name(int flag);
 const char *qws_im_update_type_name(int type);
 const char *qws_altitude_name(int altitude);
+const char *qws_prop_mode_name(int mode);
 const char *qws_window_type_str(uint32_t flags);
 const char *qws_focus_flag_str(qws_focus_flag_t flag);
 bool qws_is_synchronous_command(int type);
