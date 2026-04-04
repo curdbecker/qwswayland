@@ -326,7 +326,10 @@ void qwswl_clipboard_set(qwswl_state_t *state, const void *utf16le,
 
     char *utf8 = NULL;
     size_t utf8_len = 0;
-    if (qws_convert_from_utf16(&utf8, utf16le, (size_t)len, QWS_UTF16_LE,
+    /* Due to QWS being just messy and switching arbitrarily between byte count
+     * and character count, we simply obtain the character count for UTF-16 by
+     * dividing the byte count by 2 here. */
+    if (qws_convert_from_utf16(&utf8, utf16le, (size_t)len / 2, QWS_UTF16_LE,
                                &utf8_len) != 0) {
         fprintf(stderr, "[clipboard] UTF-16→UTF-8 conversion failed\n");
         return;

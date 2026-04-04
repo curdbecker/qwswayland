@@ -16,6 +16,9 @@ int qws_fwrite_qdatastream_qstring(FILE *f, const char *str) {
         0)
         return -1;
 
+    /* Do not include the UTF-16 NUL terminator */
+    nbytes -= 2;
+
     int ok = qws_fwrite_qdatastream_int32(f, (int32_t)nbytes) == 0 &&
              fwrite(buf, 1, nbytes, f) == nbytes;
     free(buf);

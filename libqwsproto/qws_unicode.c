@@ -7,84 +7,59 @@
 #include <iconv.h>
 #include <stdlib.h>
 
-int qws_convert_from_utf16(char **dst, const uint8_t *src, size_t srclen,
-                           qws_utf16_endian_t endian, size_t *out_bytes) {
-    const char *enc = (endian == QWS_UTF16_BE) ? "UTF-16BE" : "UTF-16LE";
-    /* an UTF-8 sequence might need to use several bytes to express the same
-     * character, therefore we use the byte size of the UTF-16 string
-     * as a simple upper bound. */
-    size_t dstlen = srclen * 2;
-    char *buf = calloc(dstlen + 1, 1); /* +1: NUL terminator */
-    if (!buf) {
-        *dst = NULL;
-        return -1;
-    }
+/* Allocates a buffer, converts via iconv, and returns it in *out_buf.
+ * Returns 0 on success with *used set to bytes written, or -1 on error. */
+static int run_iconv(const char *to_enc, const char *from_enc,
+                     const char *in_buf, size_t in_bytes, size_t char_bytes,
+                     void **out_buf, size_t *out_bytes) {
+    *out_buf = NULL;
+    if (out_bytes)
+        *out_bytes = 0;
 
-    iconv_t cd = iconv_open("UTF-8", enc);
+    /*
+     * UTF-16: at most 2 bytes per UTF-8 input byte
+     * UTF-8: UTF-16 max size is a safe output upper bound
+     */
+    size_t alloc_size = (in_bytes * 2) + char_bytes;
+    void *buf = calloc(alloc_size, 1);
+    if (!buf)
+        return -1;
+    iconv_t cd = iconv_open(to_enc, from_enc);
     if (cd == (iconv_t)-1) {
         free(buf);
-        *dst = NULL;
         return -1;
     }
-
-    size_t used;
-    {
-        /* iconv modifies its pointer arguments; keep in a private scope */
-        size_t in_avail = srclen * 2, out_avail = dstlen;
-        char *in = (char *)src, *out = buf;
-        if (iconv(cd, &in, &in_avail, &out, &out_avail) == (size_t)-1 ||
-            in_avail != 0) {
-            iconv_close(cd);
-            free(buf);
-            *dst = NULL;
-            return -1;
-        }
-        used = dstlen - out_avail;
-    }
+    /* iconv has the nasty habit of modifying its pointer arguments, so use
+     * local variables instead to avoid causing confusing to the caller */
+    size_t in_avail = in_bytes, out_avail = alloc_size;
+    char *in =
+        (char *)in_buf; /* iconv takes char** but does not write to input */
+    char *out = buf;
+    size_t res = iconv(cd, &in, &in_avail, &out, &out_avail);
     iconv_close(cd);
-
+    if (res == (size_t)-1 || in_avail != 0) {
+        free(buf);
+        return -1;
+    }
     if (out_bytes)
-        *out_bytes = used;
-    *dst = buf;
+        *out_bytes =
+            alloc_size - out_avail + char_bytes; /* include NUL terminator */
+    *out_buf = buf;
     return 0;
 }
 
-int qws_convert_to_utf16(uint8_t **dst, const char *src, size_t srclen,
+static const char *utf16_enc(qws_utf16_endian_t endian) {
+    return (endian == QWS_UTF16_BE) ? "UTF-16BE" : "UTF-16LE";
+}
+
+int qws_convert_from_utf16(char **dst, const uint8_t *src, size_t src_len,
+                           qws_utf16_endian_t endian, size_t *out_bytes) {
+    return run_iconv("UTF-8", utf16_enc(endian), (const char *)src, src_len * 2,
+                     1, (void **)dst, out_bytes);
+}
+
+int qws_convert_to_utf16(uint8_t **dst, const char *src, size_t src_len,
                          qws_utf16_endian_t endian, size_t *out_bytes) {
-    const char *enc = (endian == QWS_UTF16_BE) ? "UTF-16BE" : "UTF-16LE";
-    size_t dstlen =
-        srclen * 2; /* UTF-16: at most 2 bytes per UTF-8 input byte */
-    uint8_t *buf = calloc(dstlen + 2, 1); /* +2: UTF-16 NUL sentinel */
-    if (!buf) {
-        *dst = NULL;
-        return -1;
-    }
-
-    iconv_t cd = iconv_open(enc, "UTF-8");
-    if (cd == (iconv_t)-1) {
-        free(buf);
-        *dst = NULL;
-        return -1;
-    }
-
-    size_t used;
-    {
-        /* iconv modifies its pointer arguments; keep in a private scope */
-        size_t in_avail = srclen, out_avail = dstlen;
-        char *in = (char *)src, *out = (char *)buf;
-        if (iconv(cd, &in, &in_avail, &out, &out_avail) == (size_t)-1 ||
-            in_avail != 0) {
-            iconv_close(cd);
-            free(buf);
-            *dst = NULL;
-            return -1;
-        }
-        used = dstlen - out_avail;
-    }
-    iconv_close(cd);
-
-    if (out_bytes)
-        *out_bytes = used;
-    *dst = buf;
-    return 0;
+    return run_iconv(utf16_enc(endian), "UTF-8", src, src_len, 2, (void **)dst,
+                     out_bytes);
 }
