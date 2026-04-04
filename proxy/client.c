@@ -88,6 +88,8 @@ void qwswl_destroy_client(qwswl_state_t *state, qwswl_client_t *cl) {
      * getting an idea about what is about to happen */
     qwslock_destroy(cl->lock, true);
 
+    qwswl_cursor_store_drop_all(&cl->cursor_store);
+
     free(cl);
 }
 

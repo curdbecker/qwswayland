@@ -8,6 +8,7 @@
 
 #include "lifecycle.h"
 #include "client.h"
+#include "cursor.h"
 #include "debug.h"
 #include "proxy.h"
 #include "qws_trace.h"
@@ -182,6 +183,12 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
             wl_registry_bind(reg, name, &zqt_shell_v1_interface, 1);
         QWS_TRACE("registry: found zqt_shell_v1 (name=%u, max_version=%u)",
                   name, version);
+    } else if (strcmp(interface, "wp_cursor_shape_manager_v1") == 0) {
+        state->cursor.shape_manager = wl_registry_bind(
+            reg, name, &wp_cursor_shape_manager_v1_interface, 1);
+        QWS_TRACE("registry: found wp_cursor_shape_manager_v1 (name=%u, "
+                  "max_version=%u)",
+                  name, version);
     } else {
         QWS_TRACE("registry: skipped %s (name=%u, v=%u)", interface, name,
                   version);
@@ -311,6 +318,12 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
      * registered. Great.
      */
     wl_display_roundtrip(state->wl_display);
+
+    /* ---- Cursor infrastructure (surface + shm pool + shape device) ---- */
+    if (!qwswl_cursor_init(state)) {
+        fprintf(stderr, "[qwswayland] Failed to initialize cursor\n");
+        return -1;
+    }
 
     /* ---- Initialise display directory and derive all paths ---- */
     if (qws_init_display_dir(qws_display, &state->display_paths) != 0) {
@@ -458,6 +471,7 @@ void qwswl_shutdown(qwswl_state_t *state) {
 
     /* Clean up Wayland */
     seat_teardown(state);
+    qwswl_cursor_shutdown(state);
     if (state->xkb_context)
         xkb_context_unref(state->xkb_context);
     if (state->xdg_wm_base)
@@ -517,7 +531,7 @@ static void qwswl_disconnect_client_no_hashmap(qwswl_state_t *state,
 }
 
 void qwswl_client_foreach(qwswl_state_t *state, qwswl_client_cb_t cb,
-                           void *userdata) {
+                          void *userdata) {
     for (c_each_kv(client_id, cl, qwswl_client_map_t, state->client_map)) {
         (void)client_id;
         cb(*cl, userdata);

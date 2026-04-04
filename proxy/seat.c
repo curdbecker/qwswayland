@@ -89,7 +89,6 @@ static void pointer_enter(void *data, struct wl_pointer *ptr, uint32_t serial,
                           struct wl_surface *surface, wl_fixed_t sx,
                           wl_fixed_t sy) {
     (void)ptr;
-    (void)serial;
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_window_t *win = qwswl_surface_to_win(surface);
     assert(win);
@@ -103,6 +102,7 @@ static void pointer_enter(void *data, struct wl_pointer *ptr, uint32_t serial,
      * produce very weird results */
     memset(&state->pointer_state, 0, sizeof(state->pointer_state));
     state->pointer_state.win = win;
+    state->pointer_state.enter_serial = serial;
 
     update_pointer_position(state, sx, sy);
 }
@@ -141,7 +141,8 @@ static void pointer_motion(void *data, struct wl_pointer *ptr, uint32_t time,
          * top-level window and we're inside the region that is normally
          * associated with the window decoration, then this is likely
          * an attempt to move the window. */
-        xdg_toplevel_move(win->xdg_toplevel, state->wl_seat, pstate->serial);
+        xdg_toplevel_move(win->xdg_toplevel, state->wl_seat,
+                          pstate->button_serial);
 
         /* Hide the event from the QWS client. We do not want it to realize
          * that a move operation is about to happen and start one on its
@@ -188,7 +189,7 @@ static void pointer_button(void *data, struct wl_pointer *ptr, uint32_t serial,
         qwswl_window_set_focus(state, pstate->win, true, true);
 
     pstate->button_state = qt_state;
-    pstate->serial = serial;
+    pstate->button_serial = serial;
     state->last_input_serial = serial;
 
     send_pointer_update_event(pstate, 0);
@@ -399,7 +400,6 @@ static uint32_t qwswl_xkb_modifiers(struct xkb_state *state) {
 
     return mods;
 }
-
 
 static void kbd_repeat_disarm(qwswl_keyboard_state_t *kbd_state) {
     if (kbd_state->repeat_timerfd < 0)

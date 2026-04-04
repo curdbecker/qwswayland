@@ -21,7 +21,9 @@ typedef struct {
     int32_t gx;
     int32_t gy;
     int32_t button_state;
-    uint32_t serial;
+    uint32_t button_serial; /* most recent button event serial */
+    uint32_t
+        enter_serial; /* wl_pointer.enter serial (for wl_pointer_set_cursor) */
 } qwswl_pointer_state_t;
 
 /* Per-keyboard state. */

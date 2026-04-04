@@ -5,6 +5,7 @@ if get_option('ipc_backend') == 'posix'
 endif
 
 qwsproto_sources = files(
+  'qws_cursor.c',
   'qws_lock.c',
   'qws_pcap.c',
   'qws_proto.c',
@@ -40,6 +41,8 @@ qwsproto_dep = declare_dependency(
 )
 
 install_headers(
-  'qws_event_factory.h', 'qws_lock.h', 'qws_pcap.h', 'qws_proto.h', 'qws_qdatastream.h', 'qws_rect.h', 'qws_trace.h', 'qws_unicode.h',
+  'qws_cursor.h',
+  'qws_event_factory.h', 'qws_lock.h', 'qws_pcap.h', 'qws_proto.h', 
+  'qws_qdatastream.h', 'qws_rect.h', 'qws_trace.h', 'qws_unicode.h',
   subdir: 'qwsproto',
 )

@@ -6,6 +6,7 @@
 #include "proxy.h"
 #include "client.h"
 #include "clipboard.h"
+#include "cursor.h"
 #include "property_store.h"
 #include "qws_event_factory.h"
 #include "qws_trace.h"
@@ -104,7 +105,8 @@ static void broadcast_property_notify_cb(qwswl_client_t *cl, void *userdata) {
 void qwswl_broadcast_property_notify(qwswl_state_t *state, int32_t window,
                                      int32_t property,
                                      qws_prop_notify_state_t notify_state) {
-    struct broadcast_property_notify_args args = {window, property, notify_state};
+    struct broadcast_property_notify_args args = {window, property,
+                                                  notify_state};
     qwswl_client_foreach(state, broadcast_property_notify_cb, &args);
 }
 
@@ -519,12 +521,28 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         break;
     }
 
-    case QWS_CMD_DEFINE_CURSOR:
-    case QWS_CMD_SELECT_CURSOR:
-    case QWS_CMD_POSITION_CURSOR: {
-        /* TODO: translate to Wayland cursor via wl_cursor_theme */
+    case QWS_CMD_DEFINE_CURSOR: {
+        qws_cmd_define_cursor_t *cmd =
+            (qws_cmd_define_cursor_t *)incoming_pkt->simple_data;
+        qwswl_cursor_define(cl, cmd->id,
+                            cmd->width, cmd->height,
+                            cmd->hot_x, cmd->hot_y,
+                            incoming_pkt->raw_data,
+                            incoming_pkt->header.raw_len);
         break;
     }
+    case QWS_CMD_SELECT_CURSOR: {
+        qws_cmd_select_cursor_t *cmd =
+            (qws_cmd_select_cursor_t *)incoming_pkt->simple_data;
+        qwswl_cursor_select(state, cl, (qws_cursor_shape_t)cmd->cursor_id);
+        break;
+    }
+    case QWS_CMD_POSITION_CURSOR:
+        /* No cursor warp support in Wayland: core protocol has none;
+         * zqt_shell_v1 handles window geometry only (no cursor requests);
+         * pointer-constraints-v1 set_cursor_position_hint requires a locked
+         * pointer, not suitable for general-purpose warping. Ignore. */
+        break;
 
     case QWS_CMD_QCOP_REGISTER:
     case QWS_CMD_QCOP_SEND: {

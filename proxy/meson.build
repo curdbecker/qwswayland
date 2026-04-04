@@ -17,11 +17,21 @@ alpha_modifier_src = wayland_mod.scan_xml(
   wp_dir / 'staging/alpha-modifier/alpha-modifier-v1.xml',
   client: true, server: false)
 
+cursor_shape_src = wayland_mod.scan_xml(
+  wp_dir / 'staging/cursor-shape/cursor-shape-v1.xml',
+  client: true, server: false)
+
+# required by cursor-shape-v1
+tablet_tool_src = wayland_mod.scan_xml(
+  wp_dir / 'stable/tablet/tablet-v2.xml',
+  client: true, server: false)
+
 qt_shell_src = wayland_mod.scan_xml(
 'protocols/qt-shell-unstable-v1.xml',
 client: true, server: false)
 
 proxy_sources = files(
+  'cursor.c',
   'main.c',
   'client.c',
   'clipboard.c',
@@ -38,6 +48,8 @@ wayland_proto_lib = static_library('wayland_proto_generated',
   xdg_shell_src,
   alpha_modifier_src,
   qt_shell_src,
+  cursor_shape_src,
+  tablet_tool_src,
   c_args: ['-w'],
 )
 

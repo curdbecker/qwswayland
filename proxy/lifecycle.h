@@ -7,6 +7,7 @@
 #define LIFECYCLE_H
 
 #include "clipboard.h"
+#include "cursor.h"
 #include "property_store.h"
 #include "seat.h"
 
@@ -94,6 +95,9 @@ typedef struct qwswl_state {
      * each screen would need its own slot. */
     qwswl_window_t *focused_window;
 
+    /* Cursor state (wp_cursor_shape_v1 + bitmap fallback surface). */
+    qwswl_cursor_t cursor;
+
     /* Wayland clipboard bridge */
     qwswl_clipboard_t clipboard;
 
@@ -126,7 +130,7 @@ typedef void (*qwswl_client_cb_t)(qwswl_client_t *cl, void *userdata);
 
 /* Call cb(cl, userdata) for every connected client. */
 void qwswl_client_foreach(qwswl_state_t *state, qwswl_client_cb_t cb,
-                           void *userdata);
+                          void *userdata);
 
 void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl);
 

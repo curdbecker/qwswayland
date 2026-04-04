@@ -6,6 +6,7 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
+#include "cursor.h"
 #include "lifecycle.h"
 #include "qws_lock.h"
 #include "qws_proto.h"
@@ -39,6 +40,9 @@ typedef struct qwswl_client {
     /* Properties this client has subscribed to via ADD_PROPERTY.
      * Only subscribed properties receive PROPERTY_NOTIFY events. */
     qwswl_prop_interest_t subscriptions;
+
+    /* Custom cursors defined by this client via DEFINE_CURSOR. */
+    qwswl_cursor_store_t cursor_store;
 } qwswl_client_t;
 
 qwswl_client_t *qwswl_create_client(int fd, int32_t id);
