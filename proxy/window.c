@@ -536,11 +536,6 @@ bool qwswl_move_window(qwswl_state_t *state, qwswl_window_t *win, int32_t dx,
     if (!win->geometry.rects)
         return false; /* no valid region yet — ignore - see also above */
 
-    /* Only toplevel windows can be moved; subsurface moves might need special
-     * consideration regarding coordinate space and parent relationships
-     * and does not intuitively make that much sense. */
-    assert(!win->parent);
-
     /* The offset is meant to be additive as the source code references
      * found by Claude and my intuition thought, so have to apply them
      * by re-translating the existing rects. */
