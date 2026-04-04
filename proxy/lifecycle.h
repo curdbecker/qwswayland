@@ -6,6 +6,8 @@
 #ifndef LIFECYCLE_H
 #define LIFECYCLE_H
 
+#include "clipboard.h"
+#include "property_store.h"
 #include "seat.h"
 
 #include "qws_lock.h"
@@ -84,10 +86,19 @@ typedef struct qwswl_state {
 
     qwswl_pointer_state_t pointer_state;
     qwswl_keyboard_state_t kbd_state;
+    /* Most recent serial from any input event — required for clipboard
+     * set_selection */
+    uint32_t last_input_serial;
 
     /* Currently focused window. Single-screen assumption: with multiple screens
      * each screen would need its own slot. */
     qwswl_window_t *focused_window;
+
+    /* Wayland clipboard bridge */
+    qwswl_clipboard_t clipboard;
+
+    /* Global QWS property store (shared across all clients) */
+    qwswl_prop_store_t prop_store;
 
     /* Event loop */
     bool running;
@@ -109,6 +120,13 @@ void qwswl_shutdown(qwswl_state_t *state);
 
 /* Run the main epoll event loop (blocks until shutdown). */
 int qwswl_run(qwswl_state_t *state);
+
+/* Callback for qwswl_client_foreach; userdata is caller-defined. */
+typedef void (*qwswl_client_cb_t)(qwswl_client_t *cl, void *userdata);
+
+/* Call cb(cl, userdata) for every connected client. */
+void qwswl_client_foreach(qwswl_state_t *state, qwswl_client_cb_t cb,
+                           void *userdata);
 
 void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl);
 

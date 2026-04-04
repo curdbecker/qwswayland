@@ -5,6 +5,8 @@
 
 #include "proxy.h"
 #include "client.h"
+#include "clipboard.h"
+#include "property_store.h"
 #include "qws_event_factory.h"
 #include "qws_trace.h"
 #include "qws_unicode.h"
@@ -37,8 +39,9 @@ void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *cl) {
         return;
     }
 
-    /* Raw wire trace at max verbosity */
+#ifdef QWSWL_TRACE_INCOMING_RAW
     qws_trace_raw_bytes(cl->client_id, buf, (size_t)n);
+#endif
 
     size_t offset = 0;
     while (offset < (size_t)n) {
@@ -63,6 +66,44 @@ static void create_ids(qwswl_client_t *cl, int32_t count) {
     qws_packet_t *evt = qws_make_creation_event(first_id, count);
     qws_trace_packet(cl->client_id, evt, true);
     qws_write_packet(cl->fd, evt);
+}
+
+static void send_property_reply(qwswl_client_t *cl, int32_t window,
+                                int32_t property, const void *data,
+                                int32_t len) {
+    qws_packet_t *reply =
+        qws_make_property_reply(window, property, (void *)data, len);
+    qws_trace_packet(cl->client_id, reply, true);
+    qws_write_packet(cl->fd, reply);
+    qws_packet_free(reply);
+}
+
+static void send_property_notify(qwswl_client_t *cl, int32_t window,
+                                 int32_t property,
+                                 qws_prop_notify_state_t notify_state) {
+    qws_packet_t *evt =
+        qws_make_property_notify(window, property, notify_state);
+    qws_trace_packet(cl->client_id, evt, true);
+    qws_write_packet(cl->fd, evt);
+    qws_packet_free(evt);
+}
+
+struct broadcast_property_notify_args {
+    int32_t window;
+    int32_t property;
+    qws_prop_notify_state_t notify_state;
+};
+
+static void broadcast_property_notify_cb(qwswl_client_t *cl, void *userdata) {
+    struct broadcast_property_notify_args *a = userdata;
+    send_property_notify(cl, a->window, a->property, a->notify_state);
+}
+
+void qwswl_broadcast_property_notify(qwswl_state_t *state, int32_t window,
+                                     int32_t property,
+                                     qws_prop_notify_state_t notify_state) {
+    struct broadcast_property_notify_args args = {window, property, notify_state};
+    qwswl_client_foreach(state, broadcast_property_notify_cb, &args);
 }
 
 static void send_region_event(qwswl_client_t *cl, qwswl_window_t *win,
@@ -425,21 +466,43 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         break;
     }
 
-    case QWS_CMD_ADD_PROPERTY:
-    case QWS_CMD_SET_PROPERTY:
-    case QWS_CMD_REMOVE_PROPERTY:
-    case QWS_CMD_GET_PROPERTY: {
-        /* Minimal property store - most QWS apps don't rely heavily on this.
-         * TODO: implement a simple key-value store if needed. */
-        if (type == QWS_CMD_GET_PROPERTY) {
-            qws_cmd_get_property_t *cmd =
-                (qws_cmd_get_property_t *)incoming_pkt->simple_data;
-            /* Send empty reply */
-            qws_packet_t *reply =
-                qws_make_property_reply(cmd->window, cmd->property, NULL, 0);
-            qws_trace_packet(cl->client_id, reply, true);
-            qws_write_packet(cl->fd, reply);
+    case QWS_CMD_ADD_PROPERTY: {
+        qws_cmd_add_property_t *cmd =
+            (qws_cmd_add_property_t *)incoming_pkt->simple_data;
+        qwsprop_add(&state->prop_store, cmd->window, cmd->property);
+        break;
+    }
+    case QWS_CMD_REMOVE_PROPERTY: {
+        qws_cmd_remove_property_t *cmd =
+            (qws_cmd_remove_property_t *)incoming_pkt->simple_data;
+        qwsprop_remove(&state->prop_store, cmd->window, cmd->property);
+        break;
+    }
+    case QWS_CMD_SET_PROPERTY: {
+        qws_cmd_set_property_t *cmd =
+            (qws_cmd_set_property_t *)incoming_pkt->simple_data;
+        if (cmd->window == 0 && cmd->property == QWS_PROPERTY_TEXTCLIPBOARD) {
+            assert(cmd->mode == QWS_PROP_REPLACE);
+            qwswl_clipboard_set(state, incoming_pkt->raw_data,
+                                incoming_pkt->header.raw_len);
+        } else {
+            qwsprop_set(&state->prop_store, cmd->window, cmd->property,
+                        cmd->mode, incoming_pkt->raw_data,
+                        incoming_pkt->header.raw_len);
         }
+        break;
+    }
+    case QWS_CMD_GET_PROPERTY: {
+        qws_cmd_get_property_t *cmd =
+            (qws_cmd_get_property_t *)incoming_pkt->simple_data;
+        const void *data = NULL;
+        int32_t len = -1;
+        if (cmd->window == 0 && cmd->property == QWS_PROPERTY_TEXTCLIPBOARD)
+            qwswl_clipboard_get(state, &data, &len);
+        else
+            qwsprop_get(&state->prop_store, cmd->window, cmd->property, &data,
+                        &len);
+        send_property_reply(cl, cmd->window, cmd->property, data, len);
         break;
     }
 
@@ -480,8 +543,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     }
 
     default:
-        fprintf(stderr, "[qwswayland] Unhandled command 0x%x from client %d\n",
-                type, cl->client_id);
+        fprintf(stderr,
+                "[qwswayland] Unhandled command %s(%d) from client %d\n",
+                qws_command_type_name(type), type, cl->client_id);
         assert(false);
         break;
     }

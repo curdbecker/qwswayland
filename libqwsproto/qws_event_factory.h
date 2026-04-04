@@ -55,6 +55,10 @@ qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1,
                                              int32_t y1, int32_t x2,
                                              int32_t y2);
 
+/* Build a PropertyNotify event. */
+qws_packet_t *qws_make_property_notify(int32_t window, int32_t property,
+                                       qws_prop_notify_state_t state);
+
 /* Build a PropertyReply event. */
 qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
                                       const void *data, int32_t len);

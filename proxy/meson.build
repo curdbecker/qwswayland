@@ -24,8 +24,10 @@ client: true, server: false)
 proxy_sources = files(
   'main.c',
   'client.c',
+  'clipboard.c',
   'debug.c',
   'lifecycle.c',
+  'property_store.c',
   'proxy.c',
   'seat.c',
   'window.c',

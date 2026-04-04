@@ -134,6 +134,22 @@ qws_packet_t *qws_make_max_window_rect_event(int32_t window, int32_t x1,
     return pkt;
 }
 
+qws_packet_t *qws_make_property_notify(int32_t window, int32_t property,
+                                       qws_prop_notify_state_t state) {
+    qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_PROPERTY_NOTIFY,
+                                         sizeof(qws_evt_property_notify_t), 0);
+    if (!pkt)
+        return NULL;
+
+    qws_evt_property_notify_t *d =
+        (qws_evt_property_notify_t *)pkt->simple_data;
+    d->window = window;
+    d->property = property;
+    d->state = state;
+
+    return pkt;
+}
+
 qws_packet_t *qws_make_property_reply(int32_t window, int32_t property,
                                       const void *data, int32_t len) {
     qws_packet_t *pkt = qws_packet_alloc(QWS_EVT_PROPERTY_REPLY,

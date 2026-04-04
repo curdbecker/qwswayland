@@ -337,11 +337,16 @@ typedef struct {
     int32_t operation; /* cyclic enum: Show, Hide, ShowMaximized, etc. */
 } qws_evt_window_operation_t;
 
+typedef enum {
+    QWS_PROP_NOTIFY_CHANGED = 0,
+    QWS_PROP_NOTIFY_DELETED = 1,
+} qws_prop_notify_state_t;
+
 /* QWS_EVT_PROPERTY_NOTIFY */
 typedef struct {
     int32_t window;
     int32_t property;
-    int32_t state; /* 0=changed, 1=deleted */
+    qws_prop_notify_state_t state;
 } qws_evt_property_notify_t;
 
 /* QWS_EVT_PROPERTY_REPLY: simpleData + rawData = property value bytes */

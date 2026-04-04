@@ -142,10 +142,24 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
         wl_seat_add_listener(state->wl_seat, &seat_listener, state);
         QWS_TRACE("registry: found wl_seat (name=%u, max_version=%u)", name,
                   version);
+        /* try to setup the clipboard - we need wl_seat and
+         * wl_data_device_manager to be present and I am not too sure if the
+         * registry event ordering is dependency-aware */
+        qwswl_clipboard_init(state);
+    } else if (strcmp(interface, "wl_data_device_manager") == 0) {
+        state->clipboard.manager = wl_registry_bind(
+            reg, name, &wl_data_device_manager_interface, version);
+        QWS_TRACE(
+            "registry: found wl_data_device_manager (name=%u, max_version=%u)",
+            name, version);
+        /* try to setup the clipboard - we need wl_seat and
+         * wl_data_device_manager to be present and I am not too sure if the
+         * registry event ordering is dependency-aware */
+        qwswl_clipboard_init(state);
     } else if (strcmp(interface, "wl_output") == 0) {
         state->wl_output =
             wl_registry_bind(reg, name, &wl_output_interface, version);
-        QWS_TRACE("registry: found wl_output (name=%u, max_versionv=%u)", name,
+        QWS_TRACE("registry: found wl_output (name=%u, max_version=%u)", name,
                   version);
     } else if (strcmp(interface, "xdg_wm_base") == 0) {
         state->xdg_wm_base =
@@ -175,6 +189,7 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
 }
 
 static void seat_teardown(qwswl_state_t *state) {
+    qwswl_clipboard_destroy(state);
     if (state->wl_pointer) {
         wl_pointer_destroy(state->wl_pointer);
         state->wl_pointer = NULL;
@@ -221,6 +236,8 @@ static const struct wl_registry_listener registry_listener = {
 int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
                int32_t height, int32_t depth, bool debug_draw_rects) {
     memset(state, 0, sizeof(*state));
+    qwsprop_init(&state->prop_store);
+    state->clipboard.memfd = -1;
     state->qws_display = qws_display;
     state->debug_draw_rects = debug_draw_rects;
     state->qws_server_fd = -1;
@@ -407,6 +424,9 @@ static void qwswl_disconnect_client_no_hashmap(qwswl_state_t *state,
 void qwswl_shutdown(qwswl_state_t *state) {
     assert(state->running);
 
+    qwswl_clipboard_destroy(state);
+    qwsprop_destroy(&state->prop_store);
+
     fprintf(stderr, "[qwswayland] Shutting down\n");
 
     /* Cancel any read operation to prevent a deadlock if we should
@@ -494,6 +514,14 @@ static void qwswl_disconnect_client_no_hashmap(qwswl_state_t *state,
     epoll_ctl(state->qws_epoll_fd, EPOLL_CTL_DEL, cl->fd, NULL);
 
     qwswl_destroy_client(state, cl);
+}
+
+void qwswl_client_foreach(qwswl_state_t *state, qwswl_client_cb_t cb,
+                           void *userdata) {
+    for (c_each_kv(client_id, cl, qwswl_client_map_t, state->client_map)) {
+        (void)client_id;
+        cb(*cl, userdata);
+    }
 }
 
 void qwswl_disconnect_client(qwswl_state_t *state, qwswl_client_t *cl) {

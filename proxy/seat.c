@@ -189,6 +189,7 @@ static void pointer_button(void *data, struct wl_pointer *ptr, uint32_t serial,
 
     pstate->button_state = qt_state;
     pstate->serial = serial;
+    state->last_input_serial = serial;
 
     send_pointer_update_event(pstate, 0);
 }
@@ -482,9 +483,9 @@ static void keyboard_leave(void *data, struct wl_keyboard *kbd, uint32_t serial,
 static void keyboard_key(void *data, struct wl_keyboard *kbd, uint32_t serial,
                          uint32_t time, uint32_t key, uint32_t key_state) {
     (void)kbd;
-    (void)serial;
     (void)time;
     qwswl_state_t *state = (qwswl_state_t *)data;
+    state->last_input_serial = serial;
     qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
     bool is_press = key_state == WL_KEYBOARD_KEY_STATE_PRESSED;
     uint32_t utf32 = xkb_state_key_get_utf32(kbd_state->xkb_state, key + 8);

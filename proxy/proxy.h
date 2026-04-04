@@ -21,6 +21,11 @@ void qwswl_handle_client_data(qwswl_state_t *state, qwswl_client_t *client);
 void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *client,
                             qws_packet_t *pkt);
 
+/* Send a PropertyNotify event to every connected QWS client. */
+void qwswl_broadcast_property_notify(qwswl_state_t *state, int32_t window,
+                                     int32_t property,
+                                     qws_prop_notify_state_t notify_state);
+
 #ifdef __cplusplus
 }
 #endif
