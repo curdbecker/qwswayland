@@ -96,6 +96,8 @@ struct broadcast_property_notify_args {
 
 static void broadcast_property_notify_cb(qwswl_client_t *cl, void *userdata) {
     struct broadcast_property_notify_args *a = userdata;
+    if (!qwswl_client_is_subscribed(cl, a->window, a->property))
+        return;
     send_property_notify(cl, a->window, a->property, a->notify_state);
 }
 
@@ -197,6 +199,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         snprintf(display_spec, sizeof(display_spec),
                  "vnc:size=%dx%d:depth=%d:%d", state->screen_width,
                  state->screen_height, state->screen_depth, state->qws_display);
+        // snprintf(display_spec, sizeof(display_spec),
+        //          "linuxfb:width=%d:height=%d:%d", state->screen_width,
+        //          state->screen_height, state->qws_display);
         qws_packet_t *conn = qws_make_connected_event(
             cl->client_id, state->display_shm.shm_id, display_spec);
         qws_trace_packet(cl->client_id, conn, true);
@@ -470,12 +475,18 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_cmd_add_property_t *cmd =
             (qws_cmd_add_property_t *)incoming_pkt->simple_data;
         qwsprop_add(&state->prop_store, cmd->window, cmd->property);
+        qwswl_client_subscribe(cl, cmd->window, cmd->property);
         break;
     }
     case QWS_CMD_REMOVE_PROPERTY: {
         qws_cmd_remove_property_t *cmd =
             (qws_cmd_remove_property_t *)incoming_pkt->simple_data;
-        qwsprop_remove(&state->prop_store, cmd->window, cmd->property);
+        bool removed =
+            qwsprop_remove(&state->prop_store, cmd->window, cmd->property) == 0;
+        qwswl_client_unsubscribe(cl, cmd->window, cmd->property);
+        if (removed)
+            qwswl_broadcast_property_notify(state, cmd->window, cmd->property,
+                                            QWS_PROP_NOTIFY_DELETED);
         break;
     }
     case QWS_CMD_SET_PROPERTY: {
@@ -489,6 +500,8 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             qwsprop_set(&state->prop_store, cmd->window, cmd->property,
                         cmd->mode, incoming_pkt->raw_data,
                         incoming_pkt->header.raw_len);
+            qwswl_broadcast_property_notify(state, cmd->window, cmd->property,
+                                            QWS_PROP_NOTIFY_CHANGED);
         }
         break;
     }

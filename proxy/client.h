@@ -18,6 +18,7 @@ extern "C" {
 
 declare_hashmap(qwswl_window_map_t, int32_t, qwswl_window_t *);
 declare_list(qwswl_window_stack_t, qwswl_window_t *);
+declare_hashset(qwswl_prop_interest_t, int64_t);
 
 /* -----------------------------------------------------------
  * Per-client state: one per connected QWS application
@@ -34,6 +35,10 @@ typedef struct qwswl_client {
     /* Per-client lock (3 semaphores: BackingStore, Communication, RegionEvent)
      */
     qwslock_t *lock;
+
+    /* Properties this client has subscribed to via ADD_PROPERTY.
+     * Only subscribed properties receive PROPERTY_NOTIFY events. */
+    qwswl_prop_interest_t subscriptions;
 } qwswl_client_t;
 
 qwswl_client_t *qwswl_create_client(int fd, int32_t id);
@@ -50,6 +55,10 @@ qwswl_window_t *qwswl_find_or_allocate_window(qwswl_client_t *client,
                                               int32_t qws_id);
 void qwswl_add_window_to_client(qwswl_client_t *client, qwswl_window_t *win);
 void qwswl_remove_window_from_client(qwswl_client_t *client, int32_t qws_id);
+
+void qwswl_client_subscribe(qwswl_client_t *cl, int32_t window, int32_t property);
+void qwswl_client_unsubscribe(qwswl_client_t *cl, int32_t window, int32_t property);
+bool qwswl_client_is_subscribed(const qwswl_client_t *cl, int32_t window, int32_t property);
 
 qwswl_window_t *
 qwswl_client_window_get_first_toplevel_below(qwswl_client_t *client,

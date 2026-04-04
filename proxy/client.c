@@ -27,9 +27,30 @@
 #define i_declared
 #include "stc/list.h"
 
+#define T qwswl_prop_interest_t, int64_t
+#define i_declared
+#include "stc/hashset.h"
+
 /* ================================================================
  * Client management
  * ================================================================ */
+
+void qwswl_client_subscribe(qwswl_client_t *cl, int32_t window,
+                            int32_t property) {
+    qwswl_prop_interest_t_insert(&cl->subscriptions,
+                                 PROP_KEY(window, property));
+}
+
+void qwswl_client_unsubscribe(qwswl_client_t *cl, int32_t window,
+                              int32_t property) {
+    qwswl_prop_interest_t_erase(&cl->subscriptions, PROP_KEY(window, property));
+}
+
+bool qwswl_client_is_subscribed(const qwswl_client_t *cl, int32_t window,
+                                int32_t property) {
+    return qwswl_prop_interest_t_contains(&cl->subscriptions,
+                                          PROP_KEY(window, property));
+}
 
 int32_t qwswl_allocate_ids(qwswl_client_t *client, int32_t count) {
     assert(client && count > 0);
@@ -46,6 +67,8 @@ qwswl_client_t *qwswl_create_client(int fd, int32_t id) {
     cl->next_window_id = cl->client_id * 1000;
     qws_reader_init(&cl->reader, true);
     qwswl_window_map_t_init();
+    qwswl_window_stack_t_init();
+    qwswl_prop_interest_t_init();
 
     return cl;
 }
@@ -57,6 +80,7 @@ void qwswl_destroy_client(qwswl_state_t *state, qwswl_client_t *cl) {
     }
 
     qwswl_window_stack_t_drop(&cl->window_stack);
+    qwswl_prop_interest_t_drop(&cl->subscriptions);
 
     close(cl->fd);
 

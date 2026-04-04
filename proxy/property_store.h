@@ -22,6 +22,9 @@ typedef struct {
 declare_hashmap(qwswl_prop_map_t, int64_t, qwswl_prop_val_t);
 typedef qwswl_prop_map_t qwswl_prop_store_t;
 
+/* Pack (window, property) into a single int64_t key. */
+#define PROP_KEY(w, p) ((int64_t)(uint32_t)(w) << 32 | (uint32_t)(p))
+
 void qwsprop_init(qwswl_prop_store_t *store);
 void qwsprop_destroy(qwswl_prop_store_t *store);
 

@@ -9,9 +9,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* Pack (window, property) into a single int64_t key. */
-#define PROP_KEY(w, p) ((int64_t)(uint32_t)(w) << 32 | (uint32_t)(p))
-
 static void qwswl_prop_val_drop(qwswl_prop_val_t *v) { free(v->data); }
 
 #define T qwswl_prop_map_t, int64_t, qwswl_prop_val_t
