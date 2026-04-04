@@ -7,7 +7,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
             "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
-            "args": ["-v", "${config:qwswayland.args.verbosity}", "-x", "${config:qwswayland.args.excludeFilter}", "-d", "${config:qwswayland.args.debugLevel}"],
+            "args": ["-v", "${config:qwswayland.args.verbosity}", "-x", "${config:qwswayland.args.excludeFilter}", "-d", "${config:qwswayland.args.display}"],
             "environment": [
                 { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
                 { "name": "WAYLAND_DEBUG",   "value": "0" },

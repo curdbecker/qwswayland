@@ -12,7 +12,7 @@
     // via ${config:qwswayland.args.*} so there is a single place to edit.
     "qwswayland.args.verbosity":    "brief",
     "qwswayland.args.excludeFilter": "SelectCursor",
-    "qwswayland.args.debugLevel":   "3",
+    "qwswayland.args.display":   "3",
 
     "cSpell.words": [
         "buildroot",
