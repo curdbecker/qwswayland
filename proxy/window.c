@@ -240,13 +240,24 @@ static int qwswl_resize_buffer(qwswl_state_t *state, qwswl_window_t *win,
      * the new window dimensions with the buffer and the only way to do this is
      * apparently recreating the buffer. Otherwise, there might be some really
      * strange display artifacts about to happen. */
-    if (win->wl_surface) {
-        /* If there is already a surface, we need to make sure sure that
-         * the compositor isn't currently using the buffer, so we remove
-         * the buffer from the surface and commit it */
-        wl_surface_attach(win->wl_surface, NULL, 0, 0);
+    if (win->wl_surface)
+        /*
+         * If there is already a surface, we need to make sure sure that
+         * the compositor isn't currently using the buffer, so commit the
+         * surface.
+         *
+         * Note that we must not attach a NULL buffer to the surface, since this
+         * would be treated (at least) on Weston as something that seems quite
+         * close to completely hiding/destroying the XDG toplevel window.
+         *
+         * And that's then apparently honored in typical overreaching Wayland
+         * manner by re-positioning the window just somewhere on the screen as
+         * soon as we attach the buffer again.
+         * With very annoying effects for instance if a resize operation is
+         * going on - basically stuff jumping all over again. Sigh. Why? :-/
+         *
+         */
         wl_surface_commit(win->wl_surface);
-    }
 
     /*
      * Note for the potential future:
