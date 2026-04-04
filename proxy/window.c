@@ -399,12 +399,11 @@ static int qwswl_create_or_update_buffer(qwswl_state_t *state,
         return qwswl_resize_buffer(state, win, stride, size, width, height);
     }
 
-    /* Create anonymous file for wl_shm */
-    char template[] = "/tmp/qwswl-shm-XXXXXX";
-    int fd = mkstemp(template);
+    char memfd_name[32];
+    snprintf(memfd_name, sizeof(memfd_name), "qwswl-win-%d", win->qws_id);
+    int fd = memfd_create(memfd_name, MFD_CLOEXEC);
     if (fd < 0)
         return -1;
-    unlink(template);
 
     if (ftruncate(fd, (off_t)size) < 0) {
         close(fd);
