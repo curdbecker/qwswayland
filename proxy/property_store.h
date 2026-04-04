@@ -8,6 +8,7 @@
 
 #include "stc/types.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -28,24 +29,23 @@ typedef qwswl_prop_map_t qwswl_prop_store_t;
 void qwsprop_init(qwswl_prop_store_t *store);
 void qwsprop_destroy(qwswl_prop_store_t *store);
 
-/* Returns 0 on success, -1 on OOM. Idempotent if (window, property) already
- * exists. */
-int qwsprop_add(qwswl_prop_store_t *store, int32_t window, int32_t property);
+/* Idempotent if (window, property) already exists. Returns false on OOM. */
+bool qwsprop_add(qwswl_prop_store_t *store, int32_t window, int32_t property);
 
-int qwsprop_replace_internal(qwswl_prop_store_t *store, int32_t window,
-                             int32_t property, void *data, int32_t len);
+bool qwsprop_replace_internal(qwswl_prop_store_t *store, int32_t window,
+                              int32_t property, void *data, int32_t len);
 
-/* mode: 0=Replace, 1=Prepend, 2=Append. Returns 0 or -1 (not found / OOM). */
-int qwsprop_set(qwswl_prop_store_t *store, int32_t window, int32_t property,
-                int32_t mode, const void *data, int32_t len);
+/* Returns false if property not found or OOM. */
+bool qwsprop_set(qwswl_prop_store_t *store, int32_t window, int32_t property,
+                 int32_t mode, const void *data, int32_t len);
 
-/* Returns 0 if removed, -1 if not found. */
-int qwsprop_remove(qwswl_prop_store_t *store, int32_t window, int32_t property);
+/* Returns false if not found. */
+bool qwsprop_remove(qwswl_prop_store_t *store, int32_t window,
+                    int32_t property);
 
-/* Returns 0 and sets *data_out / *len_out on success.
- * Returns -1 and sets *len_out = -1 when not found. */
-int qwsprop_get(const qwswl_prop_store_t *store, int32_t window,
-                int32_t property, const void **data_out, int32_t *len_out);
+/* Returns false and set *data_out = NULL / *len_out = -1 when not found. */
+bool qwsprop_get(const qwswl_prop_store_t *store, int32_t window,
+                 int32_t property, const void **data_out, int32_t *len_out);
 
 #ifdef __cplusplus
 }

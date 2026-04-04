@@ -482,7 +482,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         qws_cmd_remove_property_t *cmd =
             (qws_cmd_remove_property_t *)incoming_pkt->simple_data;
         bool removed =
-            qwsprop_remove(&state->prop_store, cmd->window, cmd->property) == 0;
+            qwsprop_remove(&state->prop_store, cmd->window, cmd->property);
         qwswl_client_unsubscribe(cl, cmd->window, cmd->property);
         if (removed)
             qwswl_broadcast_property_notify(state, cmd->window, cmd->property,

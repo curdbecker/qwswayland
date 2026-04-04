@@ -312,6 +312,7 @@ void qwswl_clipboard_set(qwswl_state_t *state, const void *utf16le,
                          int32_t len) {
     qwswl_clipboard_t *cb = &state->clipboard;
 
+    qwsprop_add(&state->prop_store, 0, QWS_PROPERTY_TEXTCLIPBOARD);
     qwsprop_set(&state->prop_store, 0, QWS_PROPERTY_TEXTCLIPBOARD,
                 QWS_PROP_REPLACE, utf16le, len);
 
