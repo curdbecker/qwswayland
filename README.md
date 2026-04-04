@@ -12,7 +12,10 @@ legacy X11 applications on Wayland, but (so far) without resorting to direct int
 - Keyboard input including special keys and key repetition
 - Pointer support including standard buttons and scrolling
 - Pixel buffer support currently fixed to *ARGB32* on server and client
-- Window opacity via `wp_alpha_modifier_v1` (gracefully skipped if the compositor does not support it) (not tested yet though)
+- Window opacity via `wp_alpha_modifier_v1` (gracefully skipped if the compositor does not support it) — **not yet tested** 
+- Qt system cursors embedded in libqwsproto as `wl_shm` bitmap fallback; cursor hiding supported via blank cursor
+- Cursor shape changes via `wp_cursor_shape_v1` (preferred) — **not yet tested** 
+- Custom client-defined cursors (`DEFINE_CURSOR`) stored per client with a bitmap fallback path — **not yet tested** 
 - Clipboard bridging: QWS `GetProperty`/`SetProperty` on `_QT_SELECTION` ↔ `wl_data_device` selection, with UTF-16 ↔ UTF-8 conversion
 - General QWS property store (add/set/get/remove/notify) shared across all connected clients
 - Qt 6 Wayland compositor support via `zqt_shell_v1` (window title, position, Z-order, focus activation) — used when the compositor exposes the protocol, falls back to `xdg_shell` otherwise
