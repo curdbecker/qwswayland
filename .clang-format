@@ -6,3 +6,4 @@ BreakBeforeBraces: Attach
 AlignAfterOpenBracket: Align
 ReflowComments: true
 SpaceBeforeParens: ControlStatements
+BreakStringLiterals: false

@@ -14,6 +14,7 @@
 #include "qws_trace.h"
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,9 +23,13 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <assert.h>
+
 #define T qwswl_client_map_t, int32_t, qwswl_client_t *
 #define i_declared
 #include "stc/hashmap.h"
+
+#include "linuxfb_interposer.h"
 
 extern const struct wl_seat_listener seat_listener;
 
@@ -240,8 +245,8 @@ static const struct wl_registry_listener registry_listener = {
  * Initialization
  * ================================================================ */
 
-int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
-               int32_t height, int32_t depth, bool debug_draw_rects) {
+int qwswl_init(qwswl_state_t *state, int qws_display, bool debug_draw_rects,
+               const qwswl_screen_driver_opts_t *screen_driver) {
     memset(state, 0, sizeof(*state));
     qwsprop_init(&state->prop_store);
     state->clipboard.memfd = -1;
@@ -249,9 +254,9 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
     state->debug_draw_rects = debug_draw_rects;
     state->qws_server_fd = -1;
     state->qws_epoll_fd = -1;
-    state->screen_width = width;
-    state->screen_height = height;
-    state->screen_depth = depth;
+    state->screen_width = screen_driver->width;
+    state->screen_height = screen_driver->height;
+    state->screen_depth = screen_driver->depth;
     state->running = true;
 
     qwswl_client_map_t_init();
@@ -318,6 +323,75 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
      * registered. Great.
      */
     wl_display_roundtrip(state->wl_display);
+
+    switch (screen_driver->type) {
+    case QWSWL_SCREEN_DRIVER_VNC:
+        snprintf((char *)&state->display_spec, sizeof(state->display_spec),
+                 "vnc:size=%dx%d:depth=%d:%d", state->screen_width,
+                 state->screen_height, state->screen_depth, state->qws_display);
+        break;
+    case QWSWL_SCREEN_DRIVER_LINUXFB: {
+        qwswl_linuxfb_opts_t *opts =
+            (qwswl_linuxfb_opts_t *)&screen_driver->opts;
+        if (screen_driver->use_interposer) {
+            uint32_t line_length = (uint32_t)state->screen_width *
+                                   ((uint32_t)state->screen_depth / 8);
+            linuxfb_screen_info_t fb_info = {
+                .finfo =
+                    {
+                        .type = FB_TYPE_PACKED_PIXELS,
+                        .visual = FB_VISUAL_TRUECOLOR,
+                        .line_length = line_length,
+                        .smem_len =
+                            line_length * (uint32_t)state->screen_height,
+                    },
+                .vinfo =
+                    {
+                        .xres = (uint32_t)state->screen_width,
+                        .yres = (uint32_t)state->screen_height,
+                        .xres_virtual = (uint32_t)state->screen_width,
+                        .yres_virtual = (uint32_t)state->screen_height,
+                        .bits_per_pixel = (uint32_t)state->screen_depth,
+                        /* RGB layout — Qt sums red+green+blue lengths to get
+                         * depth. 32 bpp: ARGB8888  16 bpp: RGB565 */
+                        .red = (state->screen_depth == 16)
+                                   ? (struct fb_bitfield){11, 5, 0}
+                                   : (struct fb_bitfield){16, 8, 0},
+                        .green = (state->screen_depth == 16)
+                                     ? (struct fb_bitfield){5, 6, 0}
+                                     : (struct fb_bitfield){8, 8, 0},
+                        .blue = (state->screen_depth == 16)
+                                    ? (struct fb_bitfield){0, 5, 0}
+                                    : (struct fb_bitfield){0, 8, 0},
+                    },
+            };
+            char *dev = basename(opts->fb_device);
+            int fd = linuxfb_shm_open(dev, true);
+
+            if (fd < 0) {
+                fprintf(
+                    stderr,
+                    "[qwswayland] Failed to open linuxfb shm fd for interposer\n");
+                return -1;
+            }
+            assert(write(fd, &fb_info, sizeof(fb_info)) == sizeof(fb_info));
+            close(fd);
+
+            char fb_path[PATH_MAX];
+            snprintf((char *)&state->display_spec, sizeof(state->display_spec),
+                     "linuxfb:%s:%d",
+                     linuxfb_interposer_path(dev, fb_path, sizeof(fb_path)),
+                     state->qws_display);
+        } else {
+            snprintf((char *)&state->display_spec, sizeof(state->display_spec),
+                     "linuxfb:%s:%d", opts->fb_device, state->qws_display);
+        }
+
+        break;
+    }
+    default:
+        assert(false);
+    }
 
     /* ---- Cursor infrastructure (surface + shm pool + shape device) ---- */
     if (!qwswl_cursor_init(state)) {
@@ -420,7 +494,7 @@ int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
         return -1;
     }
 
-    fprintf(stderr, "[qwswayland] Initialized: %dbpp\n", depth);
+    fprintf(stderr, "[qwswayland] Initialized\n");
     qwswl_debug_init(state);
     return 0;
 }

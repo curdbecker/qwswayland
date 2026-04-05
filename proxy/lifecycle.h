@@ -30,6 +30,30 @@
 extern "C" {
 #endif
 
+/* -----------------------------------------------------------
+ * Screen driver selection
+ * ----------------------------------------------------------- */
+
+typedef enum {
+    QWSWL_SCREEN_DRIVER_LINUXFB,
+    QWSWL_SCREEN_DRIVER_VNC,
+} qwswl_screen_driver_type_t;
+
+typedef struct {
+    char fb_device[32]; /* e.g. /dev/fb0 */
+} qwswl_linuxfb_opts_t;
+
+typedef struct {
+    qwswl_screen_driver_type_t type;
+    int32_t width;
+    int32_t height;
+    int32_t depth;
+    bool use_interposer;
+    union {
+        qwswl_linuxfb_opts_t linuxfb;
+    } opts;
+} qwswl_screen_driver_opts_t;
+
 typedef struct qwswl_client qwswl_client_t;
 declare_hashmap(qwswl_client_map_t, int32_t, qwswl_client_t *);
 
@@ -44,6 +68,8 @@ typedef struct qwswl_state {
     /* QWS server side */
     int qws_server_fd;
     qws_display_paths_t display_paths;
+    /* QWS display specification */
+    char display_spec[128];
 
     qwswl_client_map_t client_map;
 
@@ -115,8 +141,8 @@ typedef struct qwswl_state {
 
 /* Initialize the proxy: connect to Wayland, set up QWS server socket,
  * and initialize epoll. */
-int qwswl_init(qwswl_state_t *state, int qws_display, int32_t width,
-               int32_t height, int32_t depth, bool debug_draw_rects);
+int qwswl_init(qwswl_state_t *state, int qws_display, bool debug_draw_rects,
+               const qwswl_screen_driver_opts_t *screen_driver);
 
 /* Clean shutdown: destroy all Wayland objects, disconnect clients,
  * and remove the QWS server socket. */

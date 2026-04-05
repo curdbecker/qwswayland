@@ -7,7 +7,13 @@
             "request": "launch",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
             "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
-            "args": ["-v", "${config:qwswayland.args.verbosity}", "-x", "${config:qwswayland.args.excludeFilter}", "-d", "${config:qwswayland.args.display}"],
+            "args": [
+                "-v", "${config:qwswayland.args.verbosity}", 
+                "-x", "${config:qwswayland.args.excludeFilter}", 
+                "-d", "${config:qwswayland.args.display}",
+                "-s", "linuxfb",
+                "--use-interposer"
+            ],
             "environment": [
                 { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
                 { "name": "WAYLAND_DEBUG",   "value": "0" },
@@ -64,6 +70,10 @@
                 {
                     "name": "LD_LIBRARY_PATH",
                     "value": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib"
+                },
+                {
+                    "name": "LD_PRELOAD",
+                    "value": "${workspaceFolder}/${config:mesonbuild.buildFolder}/screen_interposers/linuxfb/liblinuxfb_interposer.so"
                 },
             ],
             "args": ["-display", ":3"],

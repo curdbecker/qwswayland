@@ -11,6 +11,12 @@ add_project_arguments(
 )
 subdir('libqwsproto')
 
+screen_interposer_deps = []
+if get_option('build_screen_interposers')
+  subdir('screen_interposers/linuxfb')
+  screen_interposer_deps += linuxfb_headers_dep
+endif
+
 if get_option('build_proxy')
   subdir('proxy')
 endif

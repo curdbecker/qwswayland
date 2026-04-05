@@ -62,6 +62,7 @@ executable('qwswayland',
     xkbcommon,
     icu_uc,
     stc,
+    screen_interposer_deps,
   ],
   install: true,
 )
