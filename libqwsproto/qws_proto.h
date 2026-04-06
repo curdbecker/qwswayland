@@ -500,7 +500,7 @@ enum qws_altitude {
 typedef struct {
     int32_t window;
     int32_t altitude; /* qws_altitude */
-    int32_t is_fixed;
+    uint8_t is_fixed;
 } qws_cmd_change_altitude_t;
 
 typedef enum {
@@ -578,43 +578,43 @@ typedef struct {
 /* QWS_CMD_GRAB_MOUSE */
 typedef struct {
     int32_t window;
-    int32_t grab; /* 1=grab, 0=ungrab */
+    uint8_t grab; /* 1=grab, 0=ungrab */
 } qws_cmd_grab_mouse_t;
 
 /* QWS_CMD_GRAB_KEYBOARD */
 typedef struct {
     int32_t window;
-    int32_t grab;
+    uint8_t grab;
 } qws_cmd_grab_keyboard_t;
 
 /* Qt::CursorShape values (Qt 4.8 qnamespace.h, exact numeric match).
  * IDs 0-9 and 11-18 have QWS bitmap data; 19-21 are DnD shapes (no bitmap).
  * ID 10 (QWS_CURSOR_BLANK) hides the cursor entirely. */
 typedef enum {
-    QWS_CURSOR_ARROW          = 0,
-    QWS_CURSOR_UP_ARROW       = 1,
-    QWS_CURSOR_CROSS          = 2,
-    QWS_CURSOR_WAIT           = 3,
-    QWS_CURSOR_IBEAM          = 4,
-    QWS_CURSOR_SIZE_VER       = 5,
-    QWS_CURSOR_SIZE_HOR       = 6,
-    QWS_CURSOR_SIZE_BDIAG     = 7,
-    QWS_CURSOR_SIZE_FDIAG     = 8,
-    QWS_CURSOR_SIZE_ALL       = 9,
-    QWS_CURSOR_BLANK          = 10,
-    QWS_CURSOR_SPLIT_V        = 11,
-    QWS_CURSOR_SPLIT_H        = 12,
-    QWS_CURSOR_POINTING_HAND  = 13,
-    QWS_CURSOR_FORBIDDEN      = 14,
-    QWS_CURSOR_WHATS_THIS     = 15,
-    QWS_CURSOR_BUSY           = 16,
-    QWS_CURSOR_OPEN_HAND      = 17,
-    QWS_CURSOR_CLOSED_HAND    = 18,
-    QWS_CURSOR_DRAG_COPY      = 19,
-    QWS_CURSOR_DRAG_MOVE      = 20,
-    QWS_CURSOR_DRAG_LINK      = 21,
-    QWS_CURSOR_BITMAP         = 24,
-    QWS_CURSOR_CUSTOM         = 25,
+    QWS_CURSOR_ARROW = 0,
+    QWS_CURSOR_UP_ARROW = 1,
+    QWS_CURSOR_CROSS = 2,
+    QWS_CURSOR_WAIT = 3,
+    QWS_CURSOR_IBEAM = 4,
+    QWS_CURSOR_SIZE_VER = 5,
+    QWS_CURSOR_SIZE_HOR = 6,
+    QWS_CURSOR_SIZE_BDIAG = 7,
+    QWS_CURSOR_SIZE_FDIAG = 8,
+    QWS_CURSOR_SIZE_ALL = 9,
+    QWS_CURSOR_BLANK = 10,
+    QWS_CURSOR_SPLIT_V = 11,
+    QWS_CURSOR_SPLIT_H = 12,
+    QWS_CURSOR_POINTING_HAND = 13,
+    QWS_CURSOR_FORBIDDEN = 14,
+    QWS_CURSOR_WHATS_THIS = 15,
+    QWS_CURSOR_BUSY = 16,
+    QWS_CURSOR_OPEN_HAND = 17,
+    QWS_CURSOR_CLOSED_HAND = 18,
+    QWS_CURSOR_DRAG_COPY = 19,
+    QWS_CURSOR_DRAG_MOVE = 20,
+    QWS_CURSOR_DRAG_LINK = 21,
+    QWS_CURSOR_BITMAP = 24,
+    QWS_CURSOR_CUSTOM = 25,
 } qws_cursor_shape_t;
 
 /* QWS_CMD_DEFINE_CURSOR
@@ -644,7 +644,10 @@ typedef struct {
 typedef struct {
     int32_t window;
     qws_window_flags_t window_flags;
-    int32_t opaque;
+    union {
+        uint8_t opaque;
+        int32_t _padding; /* make sure that member is exactly 4 bytes */
+    };
     int32_t nrectangles;
 } qws_cmd_repaint_region_t;
 

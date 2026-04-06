@@ -670,8 +670,8 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
     case QWS_CMD_REPAINT_REGION: {
         if (simple_len >= (int32_t)sizeof(qws_cmd_repaint_region_t)) {
             const qws_cmd_repaint_region_t *d = simple_data;
-            fprintf(fp, "      window=%d, nrects=%d, opaque=%d\n", d->window,
-                    d->nrectangles, d->opaque);
+            fprintf(fp, "      window=%d, nrects=%d, opaque=%s\n", d->window,
+                    d->nrectangles, d->opaque ? "YES" : "NO");
             if (!brief)
                 print_window_flags(fp, d->window_flags);
             if (raw_data && raw_len > 0) {
@@ -719,9 +719,9 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
     case QWS_CMD_CHANGE_ALTITUDE: {
         if (simple_len >= (int32_t)sizeof(qws_cmd_change_altitude_t)) {
             const qws_cmd_change_altitude_t *d = simple_data;
-            fprintf(fp, "      window=%d, altitude=%s(%d), fixed=%d\n",
+            fprintf(fp, "      window=%d, altitude=%s(%d), fixed=%s\n",
                     d->window, qws_altitude_name(d->altitude), d->altitude,
-                    d->is_fixed);
+                    d->is_fixed ? "YES" : "NO");
         }
         break;
     }
