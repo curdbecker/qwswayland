@@ -177,12 +177,14 @@ static void registry_global(void *data, struct wl_registry *reg, uint32_t name,
             wl_registry_bind(reg, name, &wl_subcompositor_interface, version);
         QWS_TRACE("registry: found wl_subcompositor (name=%u, max_version=%u)",
                   name, version);
+#ifdef HAVE_ALPHA_MODIFIER_V1
     } else if (strcmp(interface, "wp_alpha_modifier_v1") == 0) {
         state->wp_alpha_modifier = wl_registry_bind(
             reg, name, &wp_alpha_modifier_v1_interface, version);
         QWS_TRACE(
             "registry: found wp_alpha_modifier_v1 (name=%u, max_version=%u)",
             name, version);
+#endif
     } else if (strcmp(interface, "zqt_shell_v1") == 0) {
         state->zqt_shell =
             wl_registry_bind(reg, name, &zqt_shell_v1_interface, 1);

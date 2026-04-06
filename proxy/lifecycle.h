@@ -20,7 +20,9 @@
 #include <wayland-client.h>
 #include <xkbcommon/xkbcommon.h>
 
+#ifdef HAVE_ALPHA_MODIFIER_V1
 #include "alpha-modifier-v1-client-protocol.h"
+#endif
 #include "qt-shell-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
@@ -103,8 +105,10 @@ typedef struct qwswl_state {
     /* wl_subcompositor for child/subsurface windows */
     struct wl_subcompositor *wl_subcompositor;
 
+#ifdef HAVE_ALPHA_MODIFIER_V1
     /* wp_alpha_modifier for per-surface opacity (optional, may be NULL) */
     struct wp_alpha_modifier_v1 *wp_alpha_modifier;
+#endif
 
     /* zqt_shell_v1 for Qt-specific window management (optional, may be NULL) */
     struct zqt_shell_v1 *zqt_shell;

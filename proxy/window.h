@@ -67,8 +67,10 @@ typedef struct qwswl_window {
         int32_t format; /* QWS pixel format from the client */
     } client_shm;
 
+#ifdef HAVE_ALPHA_MODIFIER_V1
     /* Per-surface opacity (wp_alpha_modifier, optional) */
     struct wp_alpha_modifier_surface_v1 *alpha_modifier_surface;
+#endif
 
     /* Window properties */
     char *name;

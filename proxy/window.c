@@ -785,8 +785,10 @@ void qwswl_destroy_window(qwswl_state_t *state, qwswl_window_t *win) {
 
     release_server_shm(win);
 
+#ifdef HAVE_ALPHA_MODIFIER_V1
     if (win->alpha_modifier_surface)
         wp_alpha_modifier_surface_v1_destroy(win->alpha_modifier_surface);
+#endif
 
     if (win->zqt_shell_surface)
         zqt_shell_surface_v1_destroy(win->zqt_shell_surface);
@@ -868,6 +870,9 @@ void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win,
     if (win->opacity == opacity)
         return;
 
+    win->opacity = opacity;
+
+#ifdef HAVE_ALPHA_MODIFIER_V1
     if (!state->wp_alpha_modifier) {
         fprintf(stderr,
                 "[qwswayland] warning: wp_alpha_modifier_v1 not supported"
@@ -888,13 +893,19 @@ void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win,
         }
     }
 
-    win->opacity = opacity;
-
     /* Scale 0-255 proportionally to 0-UINT32_MAX */
     uint32_t factor = (uint32_t)(((uint64_t)opacity * UINT32_MAX) / 255);
     wp_alpha_modifier_surface_v1_set_multiplier(win->alpha_modifier_surface,
                                                 factor);
     wl_surface_commit(win->wl_surface);
+#else
+    (void)state;
+    (void)win;
+    fprintf(stderr,
+            "[qwswayland] warning: wp_alpha_modifier_v1 not available"
+            " at build time, ignoring opacity for window %d\n",
+            win->qws_id);
+#endif
 }
 
 void qwswl_set_window_name(qwswl_window_t *win, char *name, char *caption) {
