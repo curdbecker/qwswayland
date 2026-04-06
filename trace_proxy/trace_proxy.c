@@ -342,7 +342,7 @@ int qwstrace_init(qwstrace_state_t *st, int listen_display,
     memset(st, 0, sizeof(*st));
     st->listen_fd = -1;
 
-    if (qws_init_display_dir(listen_display, &st->listen_paths) != 0) {
+    if (qws_init_display_dir(listen_display, &st->listen_paths, false) != 0) {
         fprintf(stderr,
                 "qwstrace: failed to initialise display directory for :%d\n",
                 listen_display);

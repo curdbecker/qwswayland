@@ -142,6 +142,7 @@ typedef struct qwswl_state {
 /* Initialize the proxy: connect to Wayland, set up QWS server socket,
  * and initialize epoll. */
 int qwswl_init(qwswl_state_t *state, int qws_display, bool debug_draw_rects,
+               bool skip_fontdb_init,
                const qwswl_screen_driver_opts_t *screen_driver);
 
 /* Clean shutdown: destroy all Wayland objects, disconnect clients,

@@ -885,7 +885,8 @@ int qws_display_paths_fill(int display, qws_display_paths_t *paths);
  * Recursively removes any existing base dir, then recreates
  * base/ and base/fonts/.  Fills *paths.
  * Returns 0 on success, -1 on error. */
-int qws_init_display_dir(int display, qws_display_paths_t *paths);
+int qws_init_display_dir(int display, qws_display_paths_t *paths,
+                         bool keep_old);
 
 /* -----------------------------------------------------------
  * Font database cache

@@ -246,6 +246,7 @@ static const struct wl_registry_listener registry_listener = {
  * ================================================================ */
 
 int qwswl_init(qwswl_state_t *state, int qws_display, bool debug_draw_rects,
+               bool use_existing_tempdir,
                const qwswl_screen_driver_opts_t *screen_driver) {
     memset(state, 0, sizeof(*state));
     qwsprop_init(&state->prop_store);
@@ -400,16 +401,18 @@ int qwswl_init(qwswl_state_t *state, int qws_display, bool debug_draw_rects,
     }
 
     /* ---- Initialise display directory and derive all paths ---- */
-    if (qws_init_display_dir(qws_display, &state->display_paths) != 0) {
+    if (qws_init_display_dir(qws_display, &state->display_paths,
+                             use_existing_tempdir) != 0) {
         fprintf(stderr,
                 "[qwswayland] Failed to initialise display directory\n");
         return -1;
     }
 
-    if (qws_build_font_database(state->display_paths.fontdb) != 0) {
-        fprintf(stderr, "[qwswayland] Failed to create font database\n");
-        return -1;
-    }
+    if (!use_existing_tempdir)
+        if (qws_build_font_database(state->display_paths.fontdb) != 0) {
+            fprintf(stderr, "[qwswayland] Failed to create font database\n");
+            return -1;
+        }
 
     /* ---- Create QWS server socket ---- */
     state->qws_server_fd = qws_server_listen(state->display_paths.socket);

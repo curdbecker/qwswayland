@@ -404,17 +404,19 @@ static int rm_entry_cb(const char *path, const struct stat *st, int typeflag,
     return remove(path);
 }
 
-int qws_init_display_dir(int display, qws_display_paths_t *paths) {
+int qws_init_display_dir(int display, qws_display_paths_t *paths,
+                         bool keep_old) {
     if (qws_display_paths_fill(display, paths) != 0)
         return -1;
 
     /* Remove any stale tree; ignore error if it didn't exist. */
-    nftw(paths->base, rm_entry_cb, 16, FTW_DEPTH | FTW_PHYS);
+    if (!keep_old)
+        nftw(paths->base, rm_entry_cb, 16, FTW_DEPTH | FTW_PHYS);
 
-    if (mkdir(paths->base, 0600) < 0)
+    if (mkdir(paths->base, 0600) < 0 && !keep_old)
         return -1;
 
-    if (mkdir(paths->fonts, 0600) < 0)
+    if (mkdir(paths->fonts, 0600) < 0 && !keep_old)
         return -1;
 
     return 0;

@@ -34,34 +34,38 @@ static const char USAGE[] =
     "Allows legacy Qt 4.8/QWS apps to run under a Wayland compositor.\n"
     "\n"
     "Options:\n"
-    "  -d, --display N          QWS display number (default: 0)\n"
-    "  -w, --width W            Screen width to report to QWS clients (default: 800)\n"
-    "  -h, --height H           Screen height to report (default: 480)\n"
-    "  -b, --depth D            Color depth in bpp (default: 32)\n"
-    "  -v, --verbose LEVEL      Trace verbosity level (default: off). LEVEL is one of:\n"
-    "                             off      no tracing\n"
-    "                             basic    one-line per packet (type + sizes)\n"
-    "                             brief    + key fields; bounding box for rects\n"
-    "                             fields   + full decoded struct fields\n"
-    "                             hexdump  + hex dump of all payloads\n"
-    "  -x, --exclude LIST       Comma-separated packet type names to suppress.\n"
-    "                             Prefix with 'cmd:' or 'evt:' to restrict direction.\n"
-    "                             Example: -x mouse,key,cmd:Region\n"
-    "  -i, --include LIST       Comma-separated packet type names to trace exclusively.\n"
-    "                             When set, only listed types are logged (before -x).\n"
-    "                             Example: -i cmd:RepaintRegion,evt:Region\n"
-    "  -D, --debug-rects        Draw a red border around each repaint rect\n"
-    "  -s, --screen-driver DRV  Screen driver to use (default: vnc).\n"
-    "                             Valid options: linuxfb, vnc\n"
-    "  -f, --fb-device DEV      Framebuffer device path for linuxfb driver\n"
-    "                             (default: /dev/fb0)\n"
-    "      --use-interposer     Assume the LD_PRELOAD interposer for the given\n"
-    "                             screen driver has been loaded into QWS clients\n"
-    "                             (default: off)\n"
-    "  -P, --pcap FILE          Write captured packets to a pcapng file.\n"
-    "                             Each frame is one QWS message (DLT_USER0).\n"
-    "                             Open with Wireshark + wireshark/qws_dissector.lua.\n"
-    "      --help               Show this help\n"
+    "  -d, --display N              QWS display number (default: 0)\n"
+    "  -w, --width W                Screen width to report to QWS clients (default: 800)\n"
+    "  -h, --height H               Screen height to report (default: 480)\n"
+    "  -b, --depth D                Color depth in bpp (default: 32)\n"
+    "  -v, --verbose LEVEL          Trace verbosity level (default: off). LEVEL is one of:\n"
+    "                                 off      no tracing\n"
+    "                                 basic    one-line per packet (type + sizes)\n"
+    "                                 brief    + key fields; bounding box for rects\n"
+    "                                 fields   + full decoded struct fields\n"
+    "                                 hexdump  + hex dump of all payloads\n"
+    "  -x, --exclude LIST           Comma-separated packet type names to suppress.\n"
+    "                                 Prefix with 'cmd:' or 'evt:' to restrict direction.\n"
+    "                                 Example: -x mouse,key,cmd:Region\n"
+    "  -i, --include LIST           Comma-separated packet type names to trace exclusively.\n"
+    "                                 When set, only listed types are logged (before -x).\n"
+    "                                 Example: -i cmd:RepaintRegion,evt:Region\n"
+    "  -D, --debug-rects            Draw a red border around each repaint rect\n"
+    "  -s, --screen-driver DRV      Screen driver to use (default: vnc).\n"
+    "                                 Valid options: linuxfb, vnc\n"
+    "  -f, --fb-device DEV          Framebuffer device path for linuxfb driver\n"
+    "                                 (default: /dev/fb0)\n"
+    "      --use-interposer         Assume the LD_PRELOAD interposer for the given\n"
+    "                                 screen driver has been loaded into QWS clients\n"
+    "                                 (default: off)\n"
+    "  -P, --pcap FILE              Write captured packets to a pcapng file.\n"
+    "                                 Each frame is one QWS message (DLT_USER0).\n"
+    "                                 Open with Wireshark + wireshark/qws_dissector.lua.\n"
+    "      --use-existing-tempdir   Use the contents of the existing temporary directory without\n"
+    "                                 cleaning it up first. This also skips our initialization of\n"
+    "                                 the font database and allows a client to use one created\n"
+    "                                 by its own Qt QWS server implementation.\n"
+    "      --help                   Show this help\n"
     "\n"
     "The proxy creates a QWS server socket at:\n"
     "  /tmp/qtembedded-$USER/QtEmbedded-<display>\n"
@@ -69,6 +73,7 @@ static const char USAGE[] =
 
 int main(int argc, char *argv[]) {
     const char *pcap_path = NULL;
+    bool use_existing_tempdir = false;
     qws_pcap_writer_t *pcap_writer = NULL;
     int qws_display = 0;
     bool debug_draw_rects = false;
@@ -93,6 +98,7 @@ int main(int argc, char *argv[]) {
         {"screen-driver", required_argument, 0, 's'},
         {"fb-device", required_argument, 0, 'f'},
         {"use-interposer", no_argument, 0, 1},
+        {"use-existing-tempdir", no_argument, 0, 2},
         {"help", no_argument, 0, 'H'},
         {0, 0, 0, 0}};
 
@@ -129,6 +135,9 @@ int main(int argc, char *argv[]) {
             break;
         case 1:
             arg_use_interposer = true;
+            break;
+        case 2:
+            use_existing_tempdir = true;
             break;
         case 'v':
             if (!qws_trace_parse_level(optarg)) {
@@ -211,8 +220,8 @@ int main(int argc, char *argv[]) {
         qws_trace_set_pcap_writer(pcap_writer);
     }
 
-    if (qwswl_init(&g_state, qws_display, debug_draw_rects, &screen_driver) !=
-        0) {
+    if (qwswl_init(&g_state, qws_display, debug_draw_rects,
+                   use_existing_tempdir, &screen_driver) != 0) {
         fprintf(stderr, "Failed to initialize. Exiting.\n");
         return 1;
     }
