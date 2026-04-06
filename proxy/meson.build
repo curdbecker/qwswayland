@@ -2,7 +2,6 @@ wayland_mod = import('unstable-wayland')
 
 wayland_client = dependency('wayland-client')
 xkbcommon      = dependency('xkbcommon')
-icu_uc         = dependency('icu-uc')
 wayland_protos = dependency('wayland-protocols')
 stc            = dependency('stc')   # from subprojects/stc.wrap
 
@@ -60,7 +59,6 @@ executable('qwswayland',
     qwsproto_dep,
     wayland_client,
     xkbcommon,
-    icu_uc,
     stc,
     screen_interposer_deps,
   ],

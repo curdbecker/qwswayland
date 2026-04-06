@@ -14,7 +14,6 @@
 
 #include <stdlib.h>
 #include <string.h>
-#include <unicode/ustring.h>
 #include <unistd.h>
 
 #include <linux/input-event-codes.h>
@@ -491,8 +490,6 @@ static void keyboard_key(void *data, struct wl_keyboard *kbd, uint32_t serial,
     uint32_t utf32 = xkb_state_key_get_utf32(kbd_state->xkb_state, key + 8);
     xkb_keysym_t keysym =
         xkb_state_key_get_one_sym(kbd_state->xkb_state, key + 8);
-    UChar utf16[2];
-
 #ifdef DEBUG_KBD_KEY
     qwswl_window_t *win = kbd_state->win;
     QWS_TRACE("evdev=%u utf32=%u %s -> qws_win=%d", key, utf32,
@@ -502,16 +499,9 @@ static void keyboard_key(void *data, struct wl_keyboard *kbd, uint32_t serial,
     xkb_state_update_key(kbd_state->xkb_state, key + 8,
                          is_press ? XKB_KEY_DOWN : XKB_KEY_UP);
 
-    {
-        int32_t utf16_len = 0;
-        UErrorCode err = U_ZERO_ERROR;
-        UChar32 cp = (UChar32)utf32;
-
-        u_strFromUTF32(utf16, 2, &utf16_len, &cp, 1, &err);
-        assert(U_SUCCESS(err) && utf16_len == 1);
-    }
-
-    int16_t unicode = (int16_t)utf16[0];
+    /* Keyboard input is always BMP (xkb never produces surrogate pairs),
+     * so utf32 fits directly into a UTF-16 code unit. */
+    int16_t unicode = (int16_t)utf32;
     uint32_t qt_key = keysym_to_qt_key(keysym);
 
     send_key_event(kbd_state, unicode, qt_key, is_press, false);
