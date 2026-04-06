@@ -5,7 +5,7 @@
 
 #include "qws_rect.h"
 
-#include <pixman-1/pixman.h>
+#include <pixman.h>
 #include <stdlib.h>
 #include <string.h>
 
