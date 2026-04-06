@@ -426,22 +426,27 @@ static void send_key_event(qwswl_keyboard_state_t *kbd_state, int16_t unicode,
 static void keyboard_keymap(void *data, struct wl_keyboard *kbd,
                             uint32_t format, int32_t fd, uint32_t size) {
     (void)kbd;
-    assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
     qwswl_state_t *state = (qwswl_state_t *)data;
     qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
 
-    char *map_shm = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
-    assert(map_shm != MAP_FAILED);
+    if (format == WL_KEYBOARD_KEYMAP_FORMAT_NO_KEYMAP) {
+        close(fd);
+        kbd_state->xkb_keymap = xkb_keymap_new_from_names(
+            state->xkb_context, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    } else {
+        assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
+        char *map_shm = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+        assert(map_shm != MAP_FAILED);
+        kbd_state->xkb_keymap = xkb_keymap_new_from_string(
+            state->xkb_context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1,
+            XKB_KEYMAP_COMPILE_NO_FLAGS);
+        munmap(map_shm, size);
+        close(fd);
+    }
 
-    kbd_state->xkb_keymap = xkb_keymap_new_from_string(
-        state->xkb_context, map_shm, XKB_KEYMAP_FORMAT_TEXT_V1,
-        XKB_KEYMAP_COMPILE_NO_FLAGS);
     assert(kbd_state->xkb_keymap);
     kbd_state->xkb_state = xkb_state_new(kbd_state->xkb_keymap);
     assert(kbd_state->xkb_state);
-
-    munmap(map_shm, size);
-    close(fd);
 }
 
 static void keyboard_enter(void *data, struct wl_keyboard *kbd, uint32_t serial,
