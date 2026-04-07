@@ -714,6 +714,8 @@ int qwswl_run(qwswl_state_t *state) {
                     assert(qwswl_accept_client(state));
                 } else if (loop_events[i].data.fd == wl_fd) {
                     /* Wayland events */
+                    if (loop_events[i].events & (EPOLLERR | EPOLLHUP))
+                        return 1; /* compositor disconnected */
                     had_wayland = true;
                 } else if (loop_events[i].data.fd == state->qws_epoll_fd) {
                     /* QWS events */
@@ -727,7 +729,8 @@ int qwswl_run(qwswl_state_t *state) {
         }
 
         if (had_wayland) {
-            wl_display_read_events(state->wl_display);
+            if (wl_display_read_events(state->wl_display) < 0)
+                return 1; /* compositor disconnected */
         } else {
             wl_display_cancel_read(state->wl_display);
         }
