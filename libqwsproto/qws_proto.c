@@ -622,6 +622,10 @@ int qws_write_packet(int fd, const qws_packet_t *pkt) {
             if (errno == EINTR || errno == EAGAIN)
                 continue;
             free(buf);
+            /* failed to write to the client for some reason. the client
+             * connection is likely broken. shut down the fd so epoll delivers
+             * EPOLLHUP and an event loop gets a chance to clean up. */
+            shutdown(fd, SHUT_RDWR);
             return -1;
         }
         written += (size_t)n;

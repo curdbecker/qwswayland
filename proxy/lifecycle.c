@@ -740,8 +740,12 @@ int qwswl_run(qwswl_state_t *state) {
             }
 
             for (int i = 0; i < nfds; i++) {
-                qwswl_handle_client_data(
-                    state, (qwswl_client_t *)qws_events[i].data.ptr);
+                qwswl_client_t *cl =
+                    (qwswl_client_t *)qws_events[i].data.ptr;
+                if (qws_events[i].events & (EPOLLERR | EPOLLHUP))
+                    qwswl_disconnect_client(state, cl);
+                else
+                    qwswl_handle_client_data(state, cl);
             }
         }
 
