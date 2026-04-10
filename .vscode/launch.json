@@ -8,8 +8,8 @@
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
             "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
             "args": [
-                "-v", "${config:qwswayland.args.verbosity}", 
-                "-x", "${config:qwswayland.args.excludeFilter}", 
+                "-v", "${config:qwswayland.args.verbosity}",
+                "-x", "${config:qwswayland.args.excludeFilter}",
                 "-d", "${config:qwswayland.args.display}",
                 "-s", "linuxfb",
                 "--use-interposer"
@@ -26,6 +26,11 @@
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
+                },
+                {
+                    "description": "Pass SIGPIPE to the process",
+                    "text": "-interpreter-exec console \"handle SIGPIPE noignore\"",
+                    "ignoreFailures": false
                 }
             ],
             "presentation": {
@@ -54,6 +59,11 @@
                     "description": "Enable pretty-printing for gdb",
                     "text": "-enable-pretty-printing",
                     "ignoreFailures": true
+                },
+                {
+                    "description": "Pass SIGPIPE to the process",
+                    "text": "-interpreter-exec console \"handle SIGPIPE noignore\"",
+                    "ignoreFailures": false
                 }
             ],
             "presentation": {
