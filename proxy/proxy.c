@@ -175,26 +175,22 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
          * Communication and RegionEvent signaling. */
         qws_cmd_identify_t *cmd =
             (qws_cmd_identify_t *)incoming_pkt->simple_data;
-
         /* Lock ID is in simpleData.id_lock */
         int32_t lock_id = cmd->id_lock;
 
-        if (lock_id >= 0) {
+        if (lock_id >= 0)
             cl->lock = qwslock_open(lock_id);
-            if (cl->lock) {
-                fprintf(stderr,
-                        "[qwswayland] Client %d: attached to lock id=%d\n",
-                        cl->client_id, lock_id);
-            } else {
-                fprintf(stderr,
-                        "[qwswayland] Client %d: FAILED to attach lock id=%d\n",
-                        cl->client_id, lock_id);
-            }
-        } else {
+
+        if (!cl->lock) {
             fprintf(stderr,
-                    "[qwswayland] Client %d: error no lock id in Identify\n",
-                    cl->client_id);
+                    "[qwswayland] Client %d: FAILED to attach lock id=%d\n",
+                    cl->client_id, lock_id);
+            qwswl_disconnect_client(state, cl);
+            break;
         }
+
+        QWS_TRACE("Client %d: attached to lock id=%d\n", cl->client_id,
+                  lock_id);
 
         /* Send Connected event */
         qws_packet_t *conn =
@@ -202,6 +198,10 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
                                      (const char *)&state->display_spec);
         qws_trace_packet(cl->client_id, conn, true);
         qws_write_packet(cl->fd, conn);
+
+        /* Store the app id for the client. */
+        qwswl_client_set_app_name(cl, (const uint8_t *)incoming_pkt->raw_data,
+                                  cmd->id_len);
 
         /*
          * The client blocks in waitForCreation() after connecting and

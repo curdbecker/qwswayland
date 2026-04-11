@@ -8,6 +8,7 @@
 #include "client.h"
 #include "qws_rect.h"
 #include "qws_trace.h"
+#include "qws_unicode.h"
 #include "window.h"
 
 #include <errno.h>
@@ -59,6 +60,18 @@ int32_t qwswl_allocate_ids(qwswl_client_t *client, int32_t count) {
     return first_id;
 }
 
+void qwswl_client_set_app_name(qwswl_client_t *cl, const uint8_t *utf16,
+                               int32_t byte_len) {
+    free(cl->app_name);
+    cl->app_name = NULL;
+    if (byte_len <= 0)
+        return;
+    if (qws_convert_from_utf16(&cl->app_name, utf16, (size_t)byte_len / 2,
+                               QWS_UTF16_LE, NULL) != 0)
+        fprintf(stderr, "[qwswayland] Client %d: failed to decode app name\n",
+                cl->client_id);
+}
+
 qwswl_client_t *qwswl_create_client(int fd, int32_t id) {
     qwswl_client_t *cl = calloc(1, sizeof(*cl));
     assert(cl != NULL);
@@ -90,6 +103,7 @@ void qwswl_destroy_client(qwswl_state_t *state, qwswl_client_t *cl) {
 
     qwswl_cursor_store_drop_all(&cl->cursor_store);
 
+    free(cl->app_name);
     free(cl);
 }
 

@@ -43,9 +43,16 @@ typedef struct qwswl_client {
 
     /* Custom cursors defined by this client via DEFINE_CURSOR. */
     qwswl_cursor_store_t cursor_store;
+
+    /* App name from the QWS_CMD_IDENTIFY packet (UTF-8, heap-allocated). */
+    char *app_name;
 } qwswl_client_t;
 
 qwswl_client_t *qwswl_create_client(int fd, int32_t id);
+
+/* Store the app name from QWS_CMD_IDENTIFY raw_data (UTF-16LE, id_len bytes). */
+void qwswl_client_set_app_name(qwswl_client_t *cl, const uint8_t *utf16,
+                               int32_t byte_len);
 
 void qwswl_destroy_client(qwswl_state_t *state, qwswl_client_t *client);
 
