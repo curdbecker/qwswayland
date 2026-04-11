@@ -9,6 +9,13 @@ add_project_arguments(
   '-Werror',
   language: ['c', 'cpp'],
 )
+
+# assert() is used to enforce internal invariants that must catch violations
+# even in release builds (e.g. detecting protocol state corruption early).
+# -UNDEBUG unconditionally undefines NDEBUG so assertions are always active.
+add_project_arguments('-UNDEBUG', language: ['c', 'cpp'])
+
+
 subdir('libqwsproto')
 
 screen_interposer_deps = []
