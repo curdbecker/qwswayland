@@ -174,7 +174,7 @@ f.altitude      = ProtoField.int32 ("qws.altitude",     "Altitude",         base
 f.is_fixed      = ProtoField.int32 ("qws.is_fixed",     "Is Fixed",         base.DEC)
 
 -- SetOpacity command
-f.opacity       = ProtoField.int32 ("qws.opacity",      "Opacity (0-255)",  base.DEC)
+f.opacity       = ProtoField.uint8 ("qws.opacity",      "Opacity (0-255)",  base.DEC)
 
 -- Region command
 f.surf_key_len  = ProtoField.int32 ("qws.surf_key_len", "Surface Key Len",  base.DEC)
@@ -313,7 +313,7 @@ local SIMPLE_LEN = {
         [12] = 8,   -- RequestFocus      {window,flag}
         [13] = 12,  -- ChangeAltitude    {window,altitude,is_fixed}
         [14] = 8,   -- SetOpacity        {window,opacity}
-        [15] = 24,  -- DefineCursor      {window,width,height,hot_x,hot_y,id}
+        [15] = 20,  -- DefineCursor      {width,height,hot_x,hot_y,id}
         [16] = 8,   -- SelectCursor      {window,cursor_id}
         [17] = 8,   -- PositionCursor     {new_x,new_y}
         [18] = 8,   -- GrabMouse         {window,grab}
@@ -350,7 +350,7 @@ local SIMPLE_LEN = {
         [15] = 12,  -- IMEvent            {window,replace_from,replace_length}
         [16] = 8,   -- IMQuery            {window,property}
         [17] = 8,   -- IMInit             {window,existence}
-        [18] = 8,   -- Embed             {window,type}
+        [18] = 12,  -- Embed             {window,nrectangles,type}
         [19] = 4,   -- Font               {type}
         [20] = 8,   -- ScreenTransform    {screen,transformation}
     },
@@ -461,7 +461,7 @@ local function decode_simple(subtree, tvb, offset, direction, type_id)
             wf:add_le(f.wf_softkeys_vis,    tvb(o, 4))
             wf:add_le(f.wf_softkeys_resp,   tvb(o, 4))
             o = o + 4
-            subtree:add_le(f.opaque,  tvb(o, 4)); o = o + 4
+            subtree:add_le(f.opaque,  tvb(o, 1)); o = o + 4
             subtree:add_le(f.nrects,  tvb(o, 4))
         elseif type_id == 13 then       -- ChangeAltitude
             subtree:add_le(f.window,   tvb(o, 4)); o = o + 4
@@ -469,7 +469,7 @@ local function decode_simple(subtree, tvb, offset, direction, type_id)
             subtree:add_le(f.is_fixed, tvb(o, 4))
         elseif type_id == 14 then       -- SetOpacity
             subtree:add_le(f.window,  tvb(o, 4)); o = o + 4
-            subtree:add_le(f.opacity, tvb(o, 4))
+            subtree:add_le(f.opacity, tvb(o, 1))
         elseif type_id == 12 then       -- RequestFocus
             subtree:add_le(f.window,     tvb(o, 4)); o = o + 4
             subtree:add_le(f.focus_flag, tvb(o, 4))
@@ -487,7 +487,6 @@ local function decode_simple(subtree, tvb, offset, direction, type_id)
             subtree:add_le(f.window,   tvb(o, 4)); o = o + 4
             subtree:add_le(f.property, tvb(o, 4))
         elseif type_id == 15 then       -- DefineCursor
-            subtree:add_le(f.window,     tvb(o, 4)); o = o + 4
             subtree:add_le(f.cur_width,  tvb(o, 4)); o = o + 4
             subtree:add_le(f.cur_height, tvb(o, 4)); o = o + 4
             subtree:add_le(f.cur_hot_x,  tvb(o, 4)); o = o + 4
@@ -570,8 +569,9 @@ local function decode_simple(subtree, tvb, offset, direction, type_id)
             subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
             subtree:add_le(f.operation, tvb(o, 4))
         elseif type_id == 18 then       -- Embed
-            subtree:add_le(f.window,    tvb(o, 4)); o = o + 4
-            subtree:add_le(f.operation, tvb(o, 4))
+            subtree:add_le(f.window,     tvb(o, 4)); o = o + 4
+            subtree:add_le(f.nrects,     tvb(o, 4)); o = o + 4
+            subtree:add_le(f.embed_type, tvb(o, 4))
         elseif type_id == 9 then        -- SelectionClear
             subtree:add_le(f.window, tvb(o, 4))
         elseif type_id == 10 then       -- SelectionRequest
@@ -748,6 +748,13 @@ local function decode_raw(root, tvb, raw_offset, raw_len, direction, type_id)
             local dat_off = ch_bytes + msg_bytes
             if ldata > 0 and raw_len >= dat_off + ldata then
                 root:add(f.raw_data, tvb(o + dat_off, ldata))
+            end
+
+        elseif type_id == 18 then
+            -- Embed: rawData = nrects × QRect (x,y,w,h as int32 LE each)
+            local nrects = tvb(sd + 4, 4):le_int()
+            if nrects > 0 and raw_len >= nrects * RECT_SIZE then
+                decode_rects(root, tvb, o, nrects, "Embed Rectangles")
             end
 
         elseif type_id == 15 or type_id == 17 then
