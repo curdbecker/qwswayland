@@ -58,23 +58,21 @@ static void wl_output_geometry(void *data, struct wl_output *output, int32_t x,
                                int32_t transform) {
     (void)data;
     (void)output;
-    (void)x;
-    (void)y;
-    (void)physical_width;
-    (void)physical_height;
-    (void)subpixel;
-    (void)transform;
-    QWS_TRACE("wl_output: geometry make=\"%s\" model=\"%s\"", make, model);
+    QWS_TRACE("geometry x=%d y=%d physical=%dx%d subpixel=%d transform=%d "
+              "make=\"%s\" model=\"%s\"",
+              x, y, physical_width, physical_height, subpixel, transform, make,
+              model);
 }
 
 static void wl_output_mode(void *data, struct wl_output *output, uint32_t flags,
                            int32_t width, int32_t height, int32_t refresh) {
     (void)output;
-    (void)refresh;
+    QWS_TRACE("mode flags=0x%x(current=%d preferred=%d) %dx%d refresh=%d",
+              flags, !!(flags & WL_OUTPUT_MODE_CURRENT),
+              !!(flags & WL_OUTPUT_MODE_PREFERRED), width, height, refresh);
     if (!(flags & WL_OUTPUT_MODE_CURRENT))
         return;
     qwswl_state_t *state = (qwswl_state_t *)data;
-    QWS_TRACE("wl_output: mode %dx%d", width, height);
     if (state->screen_width == 0 && state->screen_height == 0) {
         state->screen_width = width;
         state->screen_height = height;
@@ -327,6 +325,23 @@ int qwswl_init(qwswl_state_t *state, int qws_display, bool debug_draw_rects,
      */
     wl_display_roundtrip(state->wl_display);
 
+    if (state->screen_width <= 0 || state->screen_height <= 0) {
+        fprintf(stderr,
+                "[qwswayland] Screen size unknown (got %dx%d): the compositor "
+                "did not report output dimensions via wl_output. Specify them "
+                "manually with -w/--width and -h/--height.\n",
+                state->screen_width, state->screen_height);
+        return -1;
+    }
+
+    if (state->screen_depth != 16 && state->screen_depth != 32) {
+        fprintf(stderr,
+                "[qwswayland] Unsupported color depth %d bpp: only 16 and 32 "
+                "are supported. Use -b/--depth to specify a valid value.\n",
+                state->screen_depth);
+        return -1;
+    }
+
     switch (screen_driver->type) {
     case QWSWL_SCREEN_DRIVER_VNC:
         snprintf((char *)&state->display_spec, sizeof(state->display_spec),
@@ -355,8 +370,8 @@ int qwswl_init(qwswl_state_t *state, int qws_display, bool debug_draw_rects,
                         .xres_virtual = (uint32_t)state->screen_width,
                         .yres_virtual = (uint32_t)state->screen_height,
                         .bits_per_pixel = (uint32_t)state->screen_depth,
-                        /* RGB layout — Qt sums red+green+blue lengths to get
-                         * depth. 32 bpp: ARGB8888  16 bpp: RGB565 */
+                        /* RGB layout — Qt sums red+green+blue lengths to
+                         * get depth. 32 bpp: ARGB8888  16 bpp: RGB565 */
                         .red = (state->screen_depth == 16)
                                    ? (struct fb_bitfield){11, 5, 0}
                                    : (struct fb_bitfield){16, 8, 0},
@@ -743,8 +758,7 @@ int qwswl_run(qwswl_state_t *state) {
             }
 
             for (int i = 0; i < nfds; i++) {
-                qwswl_client_t *cl =
-                    (qwswl_client_t *)qws_events[i].data.ptr;
+                qwswl_client_t *cl = (qwswl_client_t *)qws_events[i].data.ptr;
                 if (qws_events[i].events & (EPOLLERR | EPOLLHUP))
                     qwswl_disconnect_client(state, cl);
                 else
