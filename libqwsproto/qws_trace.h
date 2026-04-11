@@ -71,6 +71,13 @@ void qws_trace_set_output(FILE *fp);
 void qws_trace_set_filter_mask(uint64_t mask);
 uint64_t qws_trace_get_filter_mask(void);
 
+/* Parse a comma-separated type-name list into a bitmask (same syntax as
+ * qws_trace_parse_exclude_list / qws_trace_parse_include_list).
+ * CMD types occupy bits 0-31, EVT types bits 32-63.
+ * The caller supplies a zeroed *out; bits for matched types are OR'd in.
+ * Returns false and prints a warning on unrecognised names. */
+bool qws_trace_parse_filter_mask(const char *list, uint64_t *out);
+
 /* Parse a comma-separated list of packet type names.
  * Each token may be prefixed with "cmd:" or "evt:" to restrict the direction;
  * unprefixed tokens are matched against both.
@@ -93,6 +100,15 @@ bool qws_trace_parse_level(const char *name);
 
 void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt,
                       bool outgoing);
+
+/* Flags for qws_trace_packet_ex */
+#define QWS_TRACE_PKT_DROPPED                                                  \
+    0x1u /* packet was intercepted and not forwarded */
+
+/* Like qws_trace_packet but accepts flags.  Dropped packets bypass the
+ * filter mask (they are always logged) and are printed in red on a TTY. */
+void qws_trace_packet_ex(int32_t client_id, const qws_packet_t *pkt,
+                         bool outgoing, uint32_t flags);
 
 /* Log raw bytes on the wire (before/after parsing).
  * Useful for diagnosing framing issues. */

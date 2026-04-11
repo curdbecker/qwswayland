@@ -27,12 +27,19 @@ extern "C" {
 /* Tracer thread message queue                                          */
 /* ------------------------------------------------------------------ */
 
+/* Packet direction as seen by the proxy. */
+typedef enum {
+    QWS_PKT_COMMAND, /* client → server */
+    QWS_PKT_EVENT,   /* server → client */
+} qws_pkt_dir_t;
+
 /* A single item in the tracer's FIFO. Ownership of pkt transfers into
  * the queue; the tracer thread is responsible for qws_packet_free(). */
 typedef struct trace_item {
     qws_packet_t *pkt; /* NULL = shutdown sentinel */
     int32_t client_id;
-    bool outgoing; /* false = cmd (client→server), true = evt */
+    qws_pkt_dir_t dir; /* QWS_PKT_COMMAND or QWS_PKT_EVENT */
+    bool dropped;      /* true = packet was not forwarded */
     struct trace_item *next;
 } trace_item_t;
 
@@ -64,7 +71,8 @@ typedef struct {
     qws_reader_t cmd_reader; /* exclusive to client-dir thread */
     qws_reader_t evt_reader; /* exclusive to server-dir thread */
 
-    trace_queue_t *tq; /* points to qwstrace_state_t.trace_queue */
+    trace_queue_t *tq;  /* points to qwstrace_state_t.trace_queue */
+    uint64_t drop_mask; /* packet types to drop; 0 = forward all */
 
     pthread_t client_thread;
     pthread_t server_thread;
@@ -86,6 +94,7 @@ typedef struct {
     int client_id; /* incremented each session, used in trace labels */
 
     qws_pcap_writer_t *pcap_writer; /* NULL if -w not given */
+    uint64_t drop_mask; /* packet types to drop entirely; 0 = forward all */
 
     /* Active session — only one at a time; NULL between sessions. */
     qwstrace_session_t *session;
@@ -102,7 +111,7 @@ typedef struct {
  * and fills listen_paths / upstream_paths.
  * Returns 0 on success, -1 on error. */
 int qwstrace_init(qwstrace_state_t *st, int listen_display,
-                  int upstream_display);
+                  int upstream_display, uint64_t drop_mask);
 
 /* Run the proxy event loop. Blocks until a signal closes listen_fd. */
 int qwstrace_run(qwstrace_state_t *st);

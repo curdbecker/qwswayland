@@ -75,7 +75,7 @@ static void trace_queue_destroy(trace_queue_t *tq) {
 /* Enqueue one packet; ownership of pkt transfers into the queue.
  * Pass pkt=NULL to enqueue the shutdown sentinel. */
 static void trace_enqueue(trace_queue_t *tq, qws_packet_t *pkt,
-                          int32_t client_id, bool outgoing) {
+                          int32_t client_id, qws_pkt_dir_t dir, bool dropped) {
     trace_item_t *item = malloc(sizeof(*item));
     if (!item) {
         /* OOM: drop rather than crash */
@@ -85,7 +85,8 @@ static void trace_enqueue(trace_queue_t *tq, qws_packet_t *pkt,
     }
     item->pkt = pkt;
     item->client_id = client_id;
-    item->outgoing = outgoing;
+    item->dir = dir;
+    item->dropped = dropped;
     item->next = NULL;
 
     pthread_mutex_lock(&tq->lock);
@@ -121,7 +122,9 @@ static void *tracer_thread_fn(void *arg) {
             break;
         }
 
-        qws_trace_packet(item->client_id, item->pkt, item->outgoing);
+        qws_trace_packet_ex(item->client_id, item->pkt,
+                            item->dir == QWS_PKT_EVENT,
+                            item->dropped ? QWS_TRACE_PKT_DROPPED : 0);
         qws_packet_free(item->pkt);
         free(item);
     }
@@ -132,11 +135,16 @@ static void *tracer_thread_fn(void *arg) {
 /* Per-direction parsing → enqueue                                     */
 /* ------------------------------------------------------------------ */
 
-/* Parse `len` bytes from `buf` through `reader`; enqueue each complete
- * packet into `tq`.  Ownership of every parsed pkt transfers to tq. */
-static void feed_and_enqueue(qws_reader_t *reader, const uint8_t *buf,
-                             size_t len, int32_t client_id, bool outgoing,
-                             trace_queue_t *tq) {
+/* Parse `len` bytes from `buf` through `reader`.  For each complete packet,
+ * check the drop mask: if not dropped, serialize and forward to dest_fd;
+ * then enqueue for tracing (with the dropped flag set accordingly).
+ * Ownership of every parsed pkt transfers to tq.
+ * Returns 0 on success, -1 if a write to dest_fd failed. */
+static int feed_and_enqueue(qws_reader_t *reader, const uint8_t *buf,
+                            size_t len, int32_t client_id, qws_pkt_dir_t dir,
+                            trace_queue_t *tq, int dest_fd,
+                            uint64_t drop_mask) {
+    int rc = 0;
     size_t offset = 0;
     while (offset < len) {
         qws_packet_t *pkt = NULL;
@@ -144,9 +152,33 @@ static void feed_and_enqueue(qws_reader_t *reader, const uint8_t *buf,
             qws_reader_feed(reader, buf + offset, len - offset, &pkt);
         assert(consumed != 0 || pkt != NULL);
         offset += consumed;
-        if (pkt)
-            trace_enqueue(tq, pkt, client_id, outgoing);
+        if (!pkt)
+            continue;
+
+        bool drop = false;
+        int32_t type = pkt->header.type;
+        if (type >= 0 && type < 32) {
+            uint64_t bit = (dir == QWS_PKT_EVENT) ? QWS_TRACE_EVT_BIT(type)
+                                                  : QWS_TRACE_CMD_BIT(type);
+            drop = (drop_mask & bit) != 0;
+        }
+
+        if (!drop) {
+            size_t wsz = qws_packet_wire_size(pkt);
+            uint8_t *wbuf = malloc(wsz);
+            if (wbuf) {
+                qws_packet_serialize(pkt, wbuf, wsz);
+                if (write_all(dest_fd, wbuf, wsz) < 0)
+                    rc = -1;
+                free(wbuf);
+            }
+        }
+
+        /* Always enqueue — tracer thread logs with the dropped flag and
+         * calls qws_packet_free(). */
+        trace_enqueue(tq, pkt, client_id, dir, drop);
     }
+    return rc;
 }
 
 /* ------------------------------------------------------------------ */
@@ -208,16 +240,19 @@ static void *client_dir_thread_fn(void *arg) {
             break;
         }
 
-        /* Forward verbatim to server */
         pthread_mutex_lock(&sess->close_mutex);
         int sfd = sess->server_fd;
         pthread_mutex_unlock(&sess->close_mutex);
-        if (sfd >= 0 && write_all(sfd, buf, (size_t)n) < 0)
-            session_close_fds(sess, "client");
+        if (sfd < 0)
+            continue;
 
-        /* Parse and enqueue for tracing */
-        feed_and_enqueue(&sess->cmd_reader, buf, (size_t)n, sess->client_id,
-                         false, sess->tq);
+        /* Parse packets, apply drop mask, forward non-dropped, enqueue all */
+        if (feed_and_enqueue(&sess->cmd_reader, buf, (size_t)n, sess->client_id,
+                             QWS_PKT_COMMAND, sess->tq, sfd,
+                             sess->drop_mask) < 0) {
+            session_close_fds(sess, "client");
+            break;
+        }
     }
 
     return NULL;
@@ -247,16 +282,19 @@ static void *server_dir_thread_fn(void *arg) {
             break;
         }
 
-        /* Forward verbatim to client */
         pthread_mutex_lock(&sess->close_mutex);
         int cfd = sess->client_fd;
         pthread_mutex_unlock(&sess->close_mutex);
-        if (cfd >= 0 && write_all(cfd, buf, (size_t)n) < 0)
-            session_close_fds(sess, "server");
+        if (cfd < 0)
+            continue;
 
-        /* Parse and enqueue for tracing */
-        feed_and_enqueue(&sess->evt_reader, buf, (size_t)n, sess->client_id,
-                         true, sess->tq);
+        /* Parse packets, apply drop mask, forward non-dropped, enqueue all */
+        if (feed_and_enqueue(&sess->evt_reader, buf, (size_t)n, sess->client_id,
+                             QWS_PKT_EVENT, sess->tq, cfd,
+                             sess->drop_mask) < 0) {
+            session_close_fds(sess, "server");
+            break;
+        }
     }
 
     return NULL;
@@ -267,7 +305,8 @@ static void *server_dir_thread_fn(void *arg) {
 /* ------------------------------------------------------------------ */
 
 static qwstrace_session_t *session_create(int cfd, int sfd, int client_id,
-                                          trace_queue_t *tq) {
+                                          trace_queue_t *tq,
+                                          uint64_t drop_mask) {
     qwstrace_session_t *sess = calloc(1, sizeof(*sess));
     if (!sess)
         return NULL;
@@ -276,6 +315,7 @@ static qwstrace_session_t *session_create(int cfd, int sfd, int client_id,
     sess->server_fd = sfd;
     sess->client_id = client_id;
     sess->tq = tq;
+    sess->drop_mask = drop_mask;
     atomic_init(&sess->dead, 0);
     pthread_mutex_init(&sess->close_mutex, NULL);
     qws_reader_init(&sess->cmd_reader, true /* reading commands */);
@@ -338,9 +378,10 @@ static void wait_until_server_ready(qwstrace_state_t *st) {
 /* ------------------------------------------------------------------ */
 
 int qwstrace_init(qwstrace_state_t *st, int listen_display,
-                  int upstream_display) {
+                  int upstream_display, uint64_t drop_mask) {
     memset(st, 0, sizeof(*st));
     st->listen_fd = -1;
+    st->drop_mask = drop_mask;
 
     if (qws_init_display_dir(listen_display, &st->listen_paths, false) != 0) {
         fprintf(stderr,
@@ -435,7 +476,8 @@ int qwstrace_run(qwstrace_state_t *st) {
         fprintf(stderr, "--- session %d: upstream connected ---\n\n",
                 st->client_id);
 
-        st->session = session_create(cfd, sfd, st->client_id, &st->trace_queue);
+        st->session = session_create(cfd, sfd, st->client_id, &st->trace_queue,
+                                     st->drop_mask);
         if (!st->session) {
             fprintf(stderr, "qwstrace: out of memory creating session\n");
             close(cfd);
@@ -453,7 +495,7 @@ int qwstrace_run(qwstrace_state_t *st) {
     }
 
     /* Signal tracer to drain and exit, then join it. */
-    trace_enqueue(&st->trace_queue, NULL, 0, false);
+    trace_enqueue(&st->trace_queue, NULL, 0, QWS_PKT_COMMAND, false);
     pthread_join(st->tracer_thread, NULL);
     st->tracer_started = false;
 
@@ -470,7 +512,7 @@ void qwstrace_shutdown(qwstrace_state_t *st) {
         st->session = NULL;
     }
     if (st->tracer_started) {
-        trace_enqueue(&st->trace_queue, NULL, 0, false);
+        trace_enqueue(&st->trace_queue, NULL, 0, QWS_PKT_COMMAND, false);
         pthread_join(st->tracer_thread, NULL);
         st->tracer_started = false;
     }

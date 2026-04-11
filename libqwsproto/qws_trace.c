@@ -16,6 +16,7 @@
 #include <strings.h>
 #include <sys/time.h>
 #include <time.h>
+#include <unistd.h>
 
 /* ================================================================
  * Global state
@@ -42,7 +43,7 @@ void qws_trace_set_pcap_writer(qws_pcap_writer_t *w) { g_pcap_writer = w; }
 
 /* Build a combined filter-mask bit pattern from a comma-separated list.
  * CMD types occupy bits 0-31, EVT types bits 32-63. */
-static bool parse_filter_list(const char *list, uint64_t *out) {
+bool qws_trace_parse_filter_mask(const char *list, uint64_t *out) {
     char *buf = strdup(list);
     if (!buf)
         return false;
@@ -100,7 +101,7 @@ static bool parse_filter_list(const char *list, uint64_t *out) {
 
 bool qws_trace_parse_exclude_list(const char *list) {
     uint64_t bits = 0;
-    if (!parse_filter_list(list, &bits))
+    if (!qws_trace_parse_filter_mask(list, &bits))
         return false;
     g_filter_mask &= ~bits;
     return true;
@@ -108,7 +109,7 @@ bool qws_trace_parse_exclude_list(const char *list) {
 
 bool qws_trace_parse_include_list(const char *list) {
     uint64_t bits = 0;
-    if (!parse_filter_list(list, &bits))
+    if (!qws_trace_parse_filter_mask(list, &bits))
         return false;
     g_filter_mask = bits;
     return true;
@@ -965,13 +966,21 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
 
 void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt,
                       bool outgoing) {
+    qws_trace_packet_ex(client_id, pkt, outgoing, 0);
+}
+
+void qws_trace_packet_ex(int32_t client_id, const qws_packet_t *pkt,
+                         bool outgoing, uint32_t flags) {
     if (!pkt)
         return;
+
+    bool dropped = (flags & QWS_TRACE_PKT_DROPPED) != 0;
 
     /* PCAP capture: independent of trace level and exclusion masks */
     if (g_pcap_writer)
         qws_pcap_writer_write(g_pcap_writer, outgoing ? 1 : 0,
-                              (uint8_t)client_id, pkt);
+                              (uint8_t)client_id,
+                              dropped ? QWS_PCAP_FLAG_DROPPED : 0, pkt);
 
     if (g_trace_level <= QWS_TRACE_OFF)
         return;
@@ -979,8 +988,9 @@ void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt,
     FILE *fp = trace_fp();
     int32_t type = pkt->header.type;
 
-    /* Check filter mask before doing any work */
-    if (type >= 0 && type < 32) {
+    /* Dropped packets bypass the filter mask — they are always logged.
+     * Non-dropped packets are checked as usual. */
+    if (!dropped && type >= 0 && type < 32) {
         uint64_t bit =
             outgoing ? QWS_TRACE_EVT_BIT(type) : QWS_TRACE_CMD_BIT(type);
         if (!(g_filter_mask & bit))
@@ -990,8 +1000,14 @@ void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt,
     const char *type_name =
         outgoing ? qws_event_type_name(type) : qws_command_type_name(type);
 
+    bool use_color = dropped && isatty(fileno(fp));
+    if (use_color)
+        fputs("\033[31m", fp);
+
     /* Level 1+: one-line summary */
     print_timestamp(fp);
+    if (dropped)
+        fputs("[DROPPED] ", fp);
     fprintf(fp, "%s ", outgoing ? "<<<" : ">>>");
     if (client_id > 0)
         fprintf(fp, "[client %d] ", client_id);
@@ -1026,6 +1042,9 @@ void qws_trace_packet(const int32_t client_id, const qws_packet_t *pkt,
                               (size_t)pkt->header.raw_len);
         }
     }
+
+    if (use_color)
+        fputs("\033[0m", fp);
 
     fflush(fp);
 }

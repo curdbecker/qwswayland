@@ -26,6 +26,11 @@
 
 local qws_proto = Proto("qws", "Qt Window System Protocol")
 
+-- Expert info: colors the packet row red in the packet list
+local ef_dropped = ProtoExpert.new("qws.expert.dropped", "Packet dropped by proxy",
+                                    expert.group.SECURITY, expert.severity.ERROR)
+qws_proto.experts = { ef_dropped }
+
 -- -----------------------------------------------------------------------
 -- Image format name table (QImage::Format, Qt 4.8)
 -- -----------------------------------------------------------------------
@@ -58,6 +63,7 @@ f.direction   = ProtoField.uint8 ("qws.direction",   "Direction",  base.DEC,
                   {[0]="Command (C→S)", [1]="Event (S→C)"})
 f.client_id   = ProtoField.uint8 ("qws.client_id",   "Client ID",  base.DEC)
 f.reserved    = ProtoField.uint16("qws.reserved",    "Reserved",   base.HEX)
+f.dropped     = ProtoField.bool  ("qws.dropped",     "Dropped",    16, nil, 0x0001)
 
 -- QWS wire header
 f.msg_type    = ProtoField.int32 ("qws.type",        "Type",       base.DEC)
@@ -813,10 +819,17 @@ function qws_proto.dissector(tvb, pinfo, tree)
                                          dir_arrow, type_name))
 
     -- Capture header subtree
+    local cap_flags = tvb(2, 2):le_uint()
+    local is_dropped = (cap_flags & 0x0001) ~= 0
+    if is_dropped then
+        pinfo.cols.info:prepend("[DROPPED] ")
+        root:add_proto_expert_info(ef_dropped, "Packet dropped by proxy")
+    end
     local cap_tree = root:add(qws_proto, tvb(0, 4), "Capture Header")
-    cap_tree:add(f.direction, tvb(0, 1))
-    cap_tree:add(f.client_id, tvb(1, 1))
-    cap_tree:add(f.reserved,  tvb(2, 2))
+    cap_tree:add    (f.direction, tvb(0, 1))
+    cap_tree:add    (f.client_id, tvb(1, 1))
+    cap_tree:add_le (f.reserved,  tvb(2, 2))
+    cap_tree:add_le (f.dropped,   tvb(2, 2))
 
     -- QWS wire header subtree
     local hdr_tree = root:add(qws_proto, tvb(4, 8), "QWS Header")

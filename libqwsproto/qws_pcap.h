@@ -40,12 +40,18 @@ typedef struct qws_pcap_writer qws_pcap_writer_t;
  * Returns pointer on success, NULL on failure (error printed to stderr). */
 qws_pcap_writer_t *qws_pcap_writer_open(const char *path);
 
+/* Capture-frame flags (stored in the reserved field of the capture header).
+ * Bit 0: packet was intercepted and not forwarded by the proxy. */
+#define QWS_PCAP_FLAG_DROPPED 0x0001u
+
 /* Write one QWS packet as a capture frame.
  * direction: 0 = client→server (command), 1 = server→client (event)
  * client_id: session identifier (truncated to uint8_t)
+ * flags: QWS_PCAP_FLAG_DROPPED to mark packets that were not forwarded.
  * Returns 0 on success, -1 on error. */
 int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
-                          uint8_t client_id, const qws_packet_t *pkt);
+                          uint8_t client_id, uint16_t flags,
+                          const qws_packet_t *pkt);
 
 /* Flush and close the file. NULL-safe. */
 void qws_pcap_writer_close(qws_pcap_writer_t *w);

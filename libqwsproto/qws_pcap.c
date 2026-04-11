@@ -59,7 +59,8 @@ qws_pcap_writer_t *qws_pcap_writer_open(const char *path) {
 /* ------------------------------------------------------------------ */
 
 int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
-                          uint8_t client_id, const qws_packet_t *pkt) {
+                          uint8_t client_id, uint16_t flags,
+                          const qws_packet_t *pkt) {
     if (!w || !pkt)
         return -1;
 
@@ -75,7 +76,7 @@ int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
     qws_capture_hdr_t *cap = (qws_capture_hdr_t *)buf;
     cap->direction = direction;
     cap->client_id = client_id;
-    cap->reserved = 0;
+    cap->reserved = flags;
 
     /* Serialize QWS wire bytes immediately after the capture header */
     qws_packet_serialize(pkt, buf + sizeof(qws_capture_hdr_t), wire_len);
@@ -123,10 +124,12 @@ qws_pcap_writer_t *qws_pcap_writer_open(const char *path) {
 }
 
 int qws_pcap_writer_write(qws_pcap_writer_t *w, uint8_t direction,
-                          uint8_t client_id, const qws_packet_t *pkt) {
+                          uint8_t client_id, uint16_t flags,
+                          const qws_packet_t *pkt) {
     (void)w;
     (void)direction;
     (void)client_id;
+    (void)flags;
     (void)pkt;
     return -1;
 }

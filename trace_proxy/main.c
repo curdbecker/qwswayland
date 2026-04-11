@@ -63,6 +63,10 @@ static void usage(const char *prog) {
         "                        When set, only listed types are logged "
         "(before -x).\n"
         "                        Example: -i cmd:RepaintRegion,evt:Region\n"
+        "  -d, --drop    LIST  Comma-separated packet types to drop entirely.\n"
+        "                        Dropped packets are not forwarded but are still\n"
+        "                        logged in red and captured to pcap with a flag.\n"
+        "                        Same syntax as --exclude. Example: -d mouse,key\n"
         "  -P, --pcap  FILE    Write captured packets to a pcapng file.\n"
         "                        Each frame is one QWS message (DLT_USER0).\n"
         "                        Open with Wireshark + "
@@ -90,6 +94,7 @@ static void usage(const char *prog) {
 int main(int argc, char *argv[]) {
     int listen_display = 1;
     int upstream_display = 0;
+    uint64_t drop_mask = 0;
 
     const char *pcap_path = NULL;
 
@@ -101,13 +106,14 @@ int main(int argc, char *argv[]) {
                                         {"verbose", required_argument, 0, 'v'},
                                         {"exclude", required_argument, 0, 'x'},
                                         {"include", required_argument, 0, 'i'},
+                                        {"drop", required_argument, 0, 'd'},
                                         {"pcap", required_argument, 0, 'P'},
                                         {"help", no_argument, 0, 'H'},
                                         {0, 0, 0, 0}};
 
     int opt;
-    while ((opt = getopt_long(argc, argv, "l:u:v:x:i:P:H", long_opts, NULL)) !=
-           -1) {
+    while ((opt = getopt_long(argc, argv, "l:u:v:x:i:d:P:H", long_opts,
+                              NULL)) != -1) {
         switch (opt) {
         case 'l':
             listen_display = atoi(optarg);
@@ -138,6 +144,13 @@ int main(int argc, char *argv[]) {
                 return 1;
             }
             break;
+        case 'd':
+            if (!qws_trace_parse_filter_mask(optarg, &drop_mask)) {
+                fprintf(stderr, "Unknown packet type in --drop list: %s\n",
+                        optarg);
+                return 1;
+            }
+            break;
         case 'P':
             pcap_path = optarg;
             break;
@@ -162,7 +175,8 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "qws_trace_proxy: listen=:%d  upstream=:%d  level=%d\n",
             listen_display, upstream_display, qws_trace_get_level());
 
-    if (qwstrace_init(&g_state, listen_display, upstream_display) != 0) {
+    if (qwstrace_init(&g_state, listen_display, upstream_display, drop_mask) !=
+        0) {
         fprintf(stderr, "Initialization failed. Exiting.\n");
         return 1;
     }
