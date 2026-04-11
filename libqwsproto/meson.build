@@ -30,6 +30,7 @@ qwsproto_lib = static_library('qwsproto',
   qwsproto_sources,
   dependencies: qwsproto_deps,
   c_args: pcap_args,
+  override_options: asan_override,
   install: true,
 )
 

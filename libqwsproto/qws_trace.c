@@ -598,7 +598,7 @@ void qws_trace_decode_command(FILE *fp, int32_t type, const void *simple_data,
         if (simple_len >= (int32_t)sizeof(qws_cmd_identify_t)) {
             const qws_cmd_identify_t *d = simple_data;
             fprintf(fp, "      id_lock=%d, id_len=%d\n", d->id_lock, d->id_len);
-            print_utf16le_field(fp, "app_name", raw_data, d->id_len * 2);
+            print_utf16le_field(fp, "app_name", raw_data, d->id_len);
         }
         break;
     }

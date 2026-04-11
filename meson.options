@@ -12,3 +12,6 @@ option('ipc_backend', type: 'combo', choices: ['sysv', 'posix'], value: 'sysv',
 
 option('build_screen_interposers', type: 'boolean', value: true,
   description: 'Build LD_PRELOAD screen interposer libraries')
+
+option('asan', type: 'boolean', value: true,
+  description: 'Enable AddressSanitizer for libqwsproto, proxy, and trace_proxy')

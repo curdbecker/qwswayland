@@ -68,6 +68,7 @@ executable('qwswayland',
   proxy_sources,
   link_with: wayland_proto_lib,
   c_args: alpha_modifier_args,
+  override_options: asan_override,
   dependencies: [
     qwsproto_dep,
     wayland_client,

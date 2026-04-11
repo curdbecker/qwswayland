@@ -15,6 +15,7 @@ add_project_arguments(
 # -UNDEBUG unconditionally undefines NDEBUG so assertions are always active.
 add_project_arguments('-UNDEBUG', language: ['c', 'cpp'])
 
+asan_override = get_option('asan') ? ['b_sanitize=address'] : []
 
 subdir('libqwsproto')
 
