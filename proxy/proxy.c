@@ -413,18 +413,31 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         qwswl_window_t *win = qwswl_find_or_allocate_window(cl, cmd->window);
 
-        switch (cmd->altitude) {
-        case QWS_ALTITUDE_STAYS_ON_TOP:
-            win->on_top = true;
-            qwswl_stack_raise_window(cl, win);
-            break;
-        case QWS_ALTITUDE_RAISE:
-            qwswl_stack_raise_window(cl, win);
-            break;
-        case QWS_ALTITUDE_LOWER:
-            qwswl_stack_lower_window(cl, win);
+        /* I don't know what they were thinking when they designed or adapted
+         * this command. The only sane explanation I have is that this must been
+         * the attempt to deal with some legacy code when migrating from older
+         * versions of Qt. Otherwise, this entire API makes no sense at all.
+         *
+         * If you should think this code looks weird, checkout the original
+         * here - it does not get better:
+         *
+         * https://github.com/qt/qt/blob/0a2f2382541424726168804be2c90b91381608c6/src/gui/embedded/qwindowsystem_qws.cpp#L2977
+         *
+         */
+
+        if (cmd->altitude < -1 || cmd->altitude > 1) {
+            QWS_TRACE("illegal altitude: %d", cmd->altitude);
             break;
         }
+
+        if (cmd->is_fixed && cmd->altitude == QWS_ALTITUDE_STAYS_ON_TOP) {
+            win->on_top = true;
+        }
+
+        if (cmd->altitude == QWS_ALTITUDE_LOWER)
+            qwswl_stack_lower_window(cl, win);
+        else
+            qwswl_stack_raise_window(cl, win);
 
         qwswl_reorder_toplevels(cl);
         if (win->parent)
@@ -458,12 +471,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
         break;
     }
 
-    case QWS_CMD_GRAB_MOUSE: {
-        /* Acknowledge but don't actually do anything special */
-        break;
-    }
-
+    case QWS_CMD_GRAB_MOUSE:
     case QWS_CMD_GRAB_KEYBOARD: {
+        /* Nothing to do here */
         break;
     }
 
@@ -576,8 +586,9 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
     if (qws_is_synchronous_command(type)) {
         /* Increment communication semaphore after completing synchronous
          * commands. The client blocks in sendSynchronousCommand() and won't
-         * process the event until it can decrement the semaphore. The server
-         * has to increment the semaphore first after sending the event. */
+         * process the event until it can decrement the semaphore. The
+         * server has to increment the semaphore first after sending the
+         * event. */
         qwslock_unlock(cl->lock, QWS_LOCK_COMMUNICATION);
     }
 }
