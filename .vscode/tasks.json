@@ -1,6 +1,7 @@
 {
     "version": "2.0.0",
     "tasks": [
+
         // ---------------------------------------------------------------
         // weston (VNC)
         //   Starts a Weston compositor with VNC backend on port 5900.
@@ -25,103 +26,11 @@
         },
 
         // ---------------------------------------------------------------
-        // trace: 1. QWS Server
-        //   Starts the example app as the QWS server on display 1.
-        //   Socket appears at /tmp/qtembedded-0/QtEmbedded-1.
+        // waypipe
+        //   Bridges the target's Wayland compositor to the local machine
+        //   via a socat TCP tunnel and a waypipe server instance.
+        //   "waypipe: Launch All" starts both processes in parallel.
         // ---------------------------------------------------------------
-        {
-            "label": "trace: 1. QWS Server",
-            "type": "shell",
-            "command": "${workspaceFolder}/builddir/example/example -qws -display VNC:size=1024x768:depth=32:1",
-            "options": {
-                "cwd": "${workspaceFolder}/builddir/example",
-                "env": {
-                    "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib",
-                }
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "qws-trace",
-            },
-            "problemMatcher": []
-        },
-
-        // ---------------------------------------------------------------
-        // trace: 2. Proxy
-        //   Waits for the server socket, then starts the trace proxy
-        //   listening on display 2 and forwarding to display 1.
-        // ---------------------------------------------------------------
-        {
-            "label": "trace: 2. Proxy",
-            "type": "shell",
-            "command": "${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1 -v brief",
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "qws-trace"
-            },
-            "problemMatcher": []
-        },
-
-        // ---------------------------------------------------------------
-        // trace: 3. QWS Client
-        //   Waits for the proxy socket, then starts the example app as a
-        //   QWS client connecting via the trace proxy on display 2.
-        // ---------------------------------------------------------------
-        {
-            "label": "trace: 3. QWS Client",
-            "type": "shell",
-            "command": "${workspaceFolder}/builddir/example/example -display :2",
-            "options": {
-                "cwd": "${workspaceFolder}/builddir/example",
-                "env": {
-                    "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib",
-                }
-            },
-            "isBackground": true,
-            "presentation": {
-                "reveal": "always",
-                "panel": "dedicated",
-                "group": "qws-trace"
-            },
-            "problemMatcher": []
-        },
-
-        // ---------------------------------------------------------------
-        // trace: Launch All  (internal — launched after build completes)
-        //   Starts all three tasks in parallel. Tasks 2 and 3 use
-        //   socket-wait loops so ordering is handled automatically.
-        // ---------------------------------------------------------------
-        {
-            "label": "trace: Launch All",
-            "dependsOn": [
-                "trace: 1. QWS Server",
-                "trace: 2. Proxy",
-                "trace: 3. QWS Client"
-            ],
-            "dependsOrder": "parallel",
-            "problemMatcher": []
-        },
-
-        // ---------------------------------------------------------------
-        // trace: Full Setup  (main entry point)
-        //   Builds first, then launches all three tasks in parallel.
-        // ---------------------------------------------------------------
-        {
-            "label": "trace: Full Setup",
-            "dependsOn": [
-                "Meson: Build all targets",
-                "trace: Launch All"
-            ],
-            "dependsOrder": "sequence",
-            "problemMatcher": []
-        },
         {
             "label": "waypipe: 1. socat tunnel",
             "type": "shell",
@@ -155,7 +64,6 @@
             },
             "problemMatcher": []
         },
-
         {
             "label": "waypipe: Launch All",
             "dependsOn": [
@@ -164,6 +72,151 @@
             ],
             "dependsOrder": "parallel",
             "problemMatcher": []
-        }
+        },
+
+        // ---------------------------------------------------------------
+        // Trace proxy
+        //   Three-process setup: QWS server on display :1, trace proxy
+        //   bridging :1 → :2, QWS client on display :2.
+        //   "trace: Full Setup" is the main entry point: it builds first,
+        //   then starts all three processes in parallel.
+        // ---------------------------------------------------------------
+        {
+            "label": "trace: 1. QWS Server",
+            "type": "shell",
+            "command": "${workspaceFolder}/builddir/example/example -qws -display VNC:size=1024x768:depth=32:1",
+            "options": {
+                "cwd": "${workspaceFolder}/builddir/example",
+                "env": {
+                    "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib",
+                }
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "qws-trace",
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "trace: 2. Proxy",
+            "type": "shell",
+            "command": "${workspaceFolder}/builddir/trace_proxy/qws_trace_proxy -l 2 -u 1 -v brief",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "qws-trace"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "trace: 3. QWS Client",
+            "type": "shell",
+            "command": "${workspaceFolder}/builddir/example/example -display :2",
+            "options": {
+                "cwd": "${workspaceFolder}/builddir/example",
+                "env": {
+                    "LD_LIBRARY_PATH": "/usr/local/Trolltech/QtEmbedded-4.8.7-generic/lib",
+                }
+            },
+            "isBackground": true,
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "qws-trace"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "trace: Launch All",
+            "dependsOn": [
+                "trace: 1. QWS Server",
+                "trace: 2. Proxy",
+                "trace: 3. QWS Client"
+            ],
+            "dependsOrder": "parallel",
+            "problemMatcher": []
+        },
+        {
+            "label": "trace: Full Setup",
+            "dependsOn": [
+                "Meson: Build all targets",
+                "trace: Launch All"
+            ],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        },
+
+        // ---------------------------------------------------------------
+        // Target hardware
+        //   Cross-compilation and remote gdbserver management for the
+        //   "microscope" ARM target.  "target: build cross" is a
+        //   dependency of both gdbserver tasks and runs automatically.
+        // ---------------------------------------------------------------
+        {
+            "label": "target: build cross",
+            "type": "shell",
+            "command": "(test -d builddir_cross || meson setup builddir_cross --cross-file cross/arm-openipc-linux-gnueabi.ini) && meson compile -C builddir_cross",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "build",
+            },
+            "problemMatcher": ["$gcc"]
+        },
+        {
+            "label": "target: start gdbserver (qwswayland)",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/target-gdbserver-qwswayland.sh",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(Listening on port)(\\s)(\\d+)$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^Process .* created",
+                    "endsPattern": "^Listening on port 2345$"
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "target"
+            },
+            "dependsOn": ["target: build cross"],
+            "dependsOrder": "sequence"
+        },
+        {
+            "label": "target: start gdbserver (qtshell)",
+            "type": "shell",
+            "command": "${workspaceFolder}/scripts/target-gdbserver-qtshell.sh",
+            "isBackground": true,
+            "problemMatcher": {
+                "pattern": {
+                    "regexp": "^(Listening on port)(\\s)(\\d+)$"
+                },
+                "background": {
+                    "activeOnStart": true,
+                    "beginsPattern": "^Process .* created",
+                    "endsPattern": "^Listening on port 2346$"
+                }
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "dedicated",
+                "group": "target"
+            },
+            "dependsOn": ["target: build cross"],
+            "dependsOrder": "sequence"
+        },
     ]
 }

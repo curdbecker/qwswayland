@@ -1,6 +1,12 @@
 {
     "version": "0.2.0",
     "configurations": [
+
+        // ---------------------------------------------------------------
+        // Local debugging (weston / waypipe)
+        //   qwswayland and example-client run locally against a Weston
+        //   compositor (VNC backend) or via a waypipe tunnel.
+        // ---------------------------------------------------------------
         {
             "type": "cppdbg",
             "name": "weston: qwswayland",
@@ -45,7 +51,13 @@
             "request": "launch",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy/qwswayland",
             "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/proxy",
-            "args": ["-v", "${config:qwswayland.args.verbosity}", "-x", "${config:qwswayland.args.excludeFilter}", "-d", "${config:qwswayland.args.display}"],
+            "args": [
+                "-v", "${config:qwswayland.args.verbosity}",
+                "-x", "${config:qwswayland.args.excludeFilter}",
+                "-d", "${config:qwswayland.args.display}",
+                "-s", "linuxfb",
+                "--use-interposer"
+            ],
             "environment": [
                 { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
                 { "name": "WAYLAND_DEBUG",   "value": "0" },
@@ -97,12 +109,16 @@
             }
         },
 
-        // --- Trace proxy setup (3 configs + compound below) ---
-
+        // ---------------------------------------------------------------
+        // Trace proxy
+        //   Three-process setup: QWS server on display :1, trace proxy
+        //   bridging :1 → :2, QWS client on display :2.  Use the compound
+        //   "trace: Full Setup (debug)" to launch all three together.
+        // ---------------------------------------------------------------
         {
             "type": "cppdbg",
             "request": "launch",
-            "name": "trace: 1. QWS Server",
+            "name": "trace: QWS Server",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example",
             "args": ["-qws", "-display", "VNC:size=1024x768:depth=32:1"],
             "cwd": "${workspaceFolder}/builddir/example",
@@ -130,10 +146,10 @@
         {
             "type": "cppdbg",
             "request": "launch",
-            "name": "trace: 2. Proxy",
+            "name": "trace: Proxy",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/trace_proxy/qws_trace_proxy",
-            "args": ["-l", "2", "-u", "1", "-v", "brief"],
-            "cwd": "${workspaceFolder}",
+            "args": ["-l", "2", "-u", "1", "-v", "brief", "-P", "dump.pcapng", "-d", "SetOpacity"],
+            "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/trace_proxy",
             "MIMode": "gdb",
             "preLaunchTask": "Meson: Build all targets",
             "setupCommands": [
@@ -152,7 +168,7 @@
         {
             "type": "cppdbg",
             "request": "launch",
-            "name": "trace: 3. QWS Client",
+            "name": "trace: QWS Client",
             "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/example/example",
             "args": ["-display", ":2"],
             "cwd": "${workspaceFolder}/builddir/example",
@@ -176,23 +192,197 @@
                 "group": "trace: Full Setup (debug)",
                 "order": 3
             }
-        }
+        },
+
+        // ---------------------------------------------------------------
+        // Target hardware (remote debugging via gdbserver over SSH)
+        //   Binaries are cross-compiled, uploaded via GDB remote put, and
+        //   debugged over extended-remote on the "microscope" target.
+        //   The compound "target: qwswayland + qtshell (remote)" starts
+        //   all three configs below together.
+        // ---------------------------------------------------------------
+        {
+            "type": "cppdbg",
+            "name": "target: qtshell (remote)",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}_cross/qt6compositor/qtshell",
+            "cwd": "/",
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb-multiarch",
+            "miDebuggerServerAddress": "microscope:2346",
+            "targetArchitecture": "arm",
+            // setupCommands run before the remote connection is made.
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set sysroot for remote symbol resolution",
+                    "text": "set sysroot remote:/",
+                    "ignoreFailures": false
+                },
+                {
+                    // Required for the pause button: without MI async mode GDB
+                    // blocks while the target runs and cannot process exec-interrupt.
+                    "description": "Enable MI async mode for pause support",
+                    "text": "-gdb-set mi-async on",
+                    "ignoreFailures": false
+                }
+            ],
+            // customLaunchSetupCommands replaces the auto-generated "target remote"
+            // command, giving us a slot to run GDB commands right after the
+            // connection is up but before the program starts.  The address here
+            // must match miDebuggerServerAddress above.
+            "customLaunchSetupCommands": [
+                {
+                    "description": "Connect to gdbserver in extended-remote mode",
+                    "text": "-interpreter-exec console \"target extended-remote microscope:2346\"",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Upload binary to target via GDB remote protocol",
+                    "text": "-interpreter-exec console \"remote put ${workspaceFolder}/${config:mesonbuild.buildFolder}_cross/qt6compositor/qtshell /mnt/sda1/qtshell\"",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set executable path on target",
+                    "text": "-interpreter-exec console \"set remote exec-file /mnt/sda1/qtshell\"",
+                    "ignoreFailures": false
+                },
+                {
+                    // -qmljsdebugger enables the QML debug service on port 3768,
+                    // listening on all interfaces so the "target: qtshell QML
+                    // debugger" session can attach directly without an SSH tunnel.
+                    "description": "Set program arguments",
+                    "text": "-exec-arguments -qmljsdebugger=host:0.0.0.0,port:3768",
+                    "ignoreFailures": false
+                }
+            ],
+            "preLaunchTask": "target: start gdbserver (qtshell)",
+            "presentation": {
+                "hidden": false,
+                "group": "target: hardware",
+                "order": 1
+            }
+        },
+        {
+            "type": "cppdbg",
+            "name": "target: qwswayland (remote)",
+            "request": "launch",
+            "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}_cross/proxy/qwswayland",
+            "cwd": "/",
+            "MIMode": "gdb",
+            "miDebuggerPath": "gdb-multiarch",
+            "miDebuggerServerAddress": "microscope:2345",
+            "targetArchitecture": "arm",
+            // setupCommands run before the remote connection is made.
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set sysroot for remote symbol resolution",
+                    "text": "set sysroot remote:/",
+                    "ignoreFailures": false
+                },
+                {
+                    // Required for the pause button: without MI async mode GDB
+                    // blocks while the target runs and cannot process exec-interrupt.
+                    "description": "Enable MI async mode for pause support",
+                    "text": "-gdb-set mi-async on",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Pass SIGPIPE to the process",
+                    "text": "-interpreter-exec console \"handle SIGPIPE noignore\"",
+                    "ignoreFailures": false
+                }
+            ],
+            // customLaunchSetupCommands replaces the auto-generated "target remote"
+            // command, giving us a slot to run GDB commands right after the
+            // connection is up but before the program starts.  The address here
+            // must match miDebuggerServerAddress above.
+            "customLaunchSetupCommands": [
+                {
+                    "description": "Connect to gdbserver in extended-remote mode",
+                    "text": "-interpreter-exec console \"target extended-remote microscope:2345\"",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Upload binary to target via GDB remote protocol",
+                    "text": "-interpreter-exec console \"remote put ${workspaceFolder}/${config:mesonbuild.buildFolder}_cross/proxy/qwswayland /mnt/sda1/qwswayland\"",
+                    "ignoreFailures": false
+                },
+                {
+                    "description": "Set executable path on target",
+                    "text": "-interpreter-exec console \"set remote exec-file /mnt/sda1/qwswayland\"",
+                    "ignoreFailures": false
+                },
+                {
+                    // There is no way to reference the "args" array above directly;
+                    // use the same ${config:...} variables so values stay in sync.
+                    "description": "Set program arguments",
+                    "text": "-exec-arguments -v ${config:qwswayland.args.verbosity} -x ${config:qwswayland.args.excludeFilter} -s linuxfb --use-existing-tempdir",
+                    "ignoreFailures": false
+                }
+            ],
+            "preLaunchTask": "target: start gdbserver (qwswayland)",
+            "presentation": {
+                "hidden": false,
+                "group": "target: hardware",
+                "order": 2
+            }
+        },
+        {
+            // The QML debugger attaches to the debug service started by
+            // -qmljsdebugger in the "target: qtshell (remote)" config above.
+            "type": "qml",
+            "request": "attach",
+            "name": "target: qtshell QML debugger",
+            "host": "microscope",
+            "port": "3768",
+            "buildDirs": [
+                "${workspaceFolder}/${config:mesonbuild.buildFolder}_cross/qt6compositor"
+            ],
+            "presentation": {
+                "hidden": false,
+                "group": "target: hardware",
+                "order": 3
+            }
+        },
     ],
-     "compounds": [
+
+    // ---------------------------------------------------------------
+    // Compound launch configurations
+    // ---------------------------------------------------------------
+    "compounds": [
         {
-          "name": "weston: qwswayland + example-client",
-          "configurations": ["weston: qwswayland", "example-client"],
-          "stopAll": true
+            "name": "target: qwswayland + qtshell (remote)",
+            "configurations": [
+                "target: qwswayland (remote)",
+                "target: qtshell (remote)",
+                "target: qtshell QML debugger"
+            ],
+            "stopAll": true
         },
         {
-          "name": "trace: Full Setup (debug)",
-          "configurations": ["trace: 1. QWS Server", "trace: 2. Proxy", "trace: 3. QWS Client"],
-          "stopAll": true
+            "name": "weston: qwswayland + example-client",
+            "configurations": ["weston: qwswayland", "example-client"],
+            "stopAll": true
         },
         {
-          "name": "waypipe: qwswayland + example-client",
-          "configurations": ["waypipe: qwswayland", "example-client"],
-          "stopAll": true
+            "name": "waypipe: qwswayland + example-client",
+            "configurations": ["waypipe: qwswayland", "example-client"],
+            "stopAll": true
+        },
+        {
+            "name": "trace: Full Setup (debug)",
+            "configurations": ["trace: QWS Server", "trace: Proxy", "trace: QWS Client"],
+            "stopAll": true
         },
     ],
 }

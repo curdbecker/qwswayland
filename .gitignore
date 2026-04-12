@@ -35,6 +35,7 @@ __MACOSX/
 ._*
 
 # Editor/IDE
+.qtcreator/
 .idea/
 *.swp
 *.swo

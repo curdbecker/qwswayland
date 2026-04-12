@@ -36,3 +36,7 @@ endif
 if get_option('build_example') and not meson.is_cross_build()
   subdir('example')
 endif
+
+if get_option('build_qt6compositor')
+  subdir('qt6compositor')
+endif
