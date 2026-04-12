@@ -23,6 +23,7 @@
             "environment": [
                 { "name": "XDG_RUNTIME_DIR", "value": "/tmp/xdg" },
                 { "name": "WAYLAND_DEBUG",   "value": "0" },
+                { "name": "ASAN_OPTIONS",   "value": "abort_on_error=1" },
             ],
             "MIMode": "gdb",
             "envFile": "${workspaceFolder}/${config:mesonbuild.buildFolder}/meson-vscode.env",

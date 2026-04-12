@@ -56,8 +56,10 @@ const struct xdg_surface_listener xdg_surface_listener = {
 static void xdg_toplevel_configure(void *data, struct xdg_toplevel *toplevel,
                                    int32_t width, int32_t height,
                                    struct wl_array *states) {
-    qwswl_state_t *state = (qwswl_state_t *)data;
-    qwswl_window_t *win = xdg_toplevel_get_user_data(toplevel);
+    (void)toplevel;
+    qwswl_window_t *win = (qwswl_window_t *)data;
+    qwswl_state_t *state =
+        (qwswl_state_t *)xdg_surface_get_user_data(win->xdg_surface);
     /* width/height of 0 means "compositor defers to the client" */
     assert(width == 0 && height == 0);
 
@@ -800,9 +802,7 @@ void qwswl_create_window(qwswl_state_t *state, qwswl_window_t *win,
             xdg_surface_add_listener(win->xdg_surface, &xdg_surface_listener,
                                      state);
             xdg_toplevel_add_listener(win->xdg_toplevel, &xdg_toplevel_listener,
-                                      state);
-            xdg_toplevel_set_user_data(win->xdg_toplevel,
-                                       win); /* correlate back to win */
+                                      win);
             if (win->caption)
                 xdg_toplevel_set_title(win->xdg_toplevel, win->caption);
         }
@@ -1003,7 +1003,8 @@ void qwswl_window_set_focus(qwswl_state_t *state, qwswl_window_t *win,
     if (focused) {
         if (state->focused_window == win)
             return;
-        /* Focus gain is sufficient — QWS clients treat it as an implicit
+        /*
+         * Focus gain is sufficient — QWS clients treat it as an implicit
          * LOSE for any previously focused window, so no explicit LOSE needed.
          */
         state->focused_window = win;
