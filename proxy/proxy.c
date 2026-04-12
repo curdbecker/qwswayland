@@ -189,8 +189,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
             break;
         }
 
-        QWS_TRACE("Client %d: attached to lock id=%d\n", cl->client_id,
-                  lock_id);
+        QWS_TRACE("Client %d: attached to lock id=%d", cl->client_id, lock_id);
 
         /* Send Connected event */
         qws_packet_t *conn =
@@ -269,7 +268,7 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
                 assert(sd->mem_id >= 0);
 
-                qwswl_attach_client_shm(win, sd->mem_id);
+                qwswl_attach_client_shm(win, sd->mem_id, sd->format);
             }
             free(surface_key);
 
@@ -349,11 +348,6 @@ void qwswl_dispatch_command(qwswl_state_t *state, qwswl_client_t *cl,
 
         qwswl_update_regions(state, cl, NULL, send_region_event);
         qwswl_update_surface(state, win, rects, cmd->nrectangles);
-
-        /* This might be not exactly what we want, since this will
-         * affect the entire surface and not just the ones that
-         * have been specified by the client... Who knows? */
-        qwswl_set_opacity(state, win, cmd->opaque ? 255 : 0);
 
         break;
     }

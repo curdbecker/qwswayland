@@ -48,6 +48,10 @@
 MainWindow::MainWindow()
 //! [1] //! [2]
 {
+    // quick hack to get a semi-transparent window for testing and comparing the
+    // opacity in native QWS and our QWSWayland implementation
+    this->setWindowOpacity(0.5);
+
     textEdit = new QPlainTextEdit;
     setCentralWidget(textEdit);
 

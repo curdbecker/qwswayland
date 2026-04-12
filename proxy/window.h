@@ -8,6 +8,8 @@
 
 #include "lifecycle.h"
 
+#include "qws_proto.h"
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -63,8 +65,8 @@ typedef struct qwswl_window {
 
     /* QWS client pixel buffer (SysV shm, permanently attached) */
     struct {
-        qws_shm_t shm;  /* shm_id, base (pixels) */
-        int32_t format; /* QWS pixel format from the client */
+        qws_shm_t shm;             /* shm_id, base (pixels) */
+        qws_image_format_t format; /* QWS pixel format from the client */
     } client_shm;
 
 #ifdef HAVE_ALPHA_MODIFIER_V1
@@ -117,7 +119,8 @@ void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win,
 /* Attach, reattach or detach the QWS client's SysV shm as a permanently-mapped
  * read-only buffer on the window. Detaches any previously attached mapping
  * when the shm_id changes. */
-void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id);
+void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id,
+                             qws_image_format_t shm_format);
 void qwswl_detach_client_shm(qwswl_window_t *win);
 
 /* Copy pixels from QWS client's shared memory into the Wayland buffer,

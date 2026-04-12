@@ -15,6 +15,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <pixman.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
@@ -196,12 +197,15 @@ static void release_server_shm(qwswl_window_t *win) {
         wl_shm_pool_destroy(win->server_shm.pool);
 }
 
-void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id) {
+void qwswl_attach_client_shm(qwswl_window_t *win, int shm_id,
+                             qws_image_format_t shm_format) {
     if (win->client_shm.shm.shm_id == shm_id || shm_id == -1)
         return;
 
     qws_shm_detach(&win->client_shm.shm);
     assert(qws_shm_attach_sysv(&win->client_shm.shm, shm_id) == 0);
+
+    win->client_shm.format = shm_format;
 }
 
 void qwswl_detach_client_shm(qwswl_window_t *win) {
@@ -590,11 +594,21 @@ static void draw_debug_border(qwswl_window_t *win, int32_t x, int32_t y,
     }
 }
 
+/* Returns true when the compositor supports wp_alpha_modifier at runtime.
+ * Always false when the protocol was not available at build time. */
+static bool alpha_modifier_available(const qwswl_state_t *state) {
+#ifdef HAVE_ALPHA_MODIFIER_V1
+    return state->wp_alpha_modifier != NULL;
+#else
+    (void)state;
+    return false;
+#endif
+}
+
 void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
                           const qws_rect_t *rects, int32_t nrects) {
     /* TODO: format conversion (e.g. RGB16 → ARGB32) when
      * client_shm.format != ARGB32 */
-    const size_t bytes_per_pixel = 4;
 
     if (!rects || nrects <= 0)
         return;
@@ -610,7 +624,7 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
      * the visible surface */
     {
         size_t surface_bytes =
-            win->server_shm.width * win->server_shm.height * bytes_per_pixel;
+            (size_t)win->server_shm.width * (size_t)win->server_shm.height * 4u;
         assert(win->client_shm.shm.size >= surface_bytes &&
                win->server_shm.size >= surface_bytes);
     }
@@ -625,30 +639,74 @@ void qwswl_update_surface(qwswl_state_t *state, qwswl_window_t *win,
     qws_clip_rects(translated_rects, nrects, win->server_shm.width - 1,
                    win->server_shm.height - 1);
 
+    /*
+     * Blit QWS client pixels into the Wayland buffer (a8r8g8b8).
+     *
+     * QWS_FORMAT_ARGB32_PREMULTIPLIED: source is already premultiplied
+     * a8r8g8b8. Pass it through unchanged — applying any additional opacity
+     * would double-premultiply the pixels. An assert guards against the window
+     * having an active wp_alpha_modifier surface, which would cause the same
+     * problem.
+     *
+     * All other formats: treat the source alpha byte as don't-care (x8r8g8b8).
+     * When wp_alpha_modifier is available the compositor handles opacity and
+     * the buffer alpha must be 0xFF. Otherwise opacity is baked into the
+     * buffer: PIXMAN_OP_SRC with a solid-fill mask premultiplies the RGB
+     * channels (result.RGB = src.RGB × opacity/255), which is correct for
+     * Wayland's premultiplied WL_SHM_FORMAT_ARGB8888.
+     */
+    pixman_format_code_t src_fmt;
+    uint8_t blit_alpha;
+
+    if (win->client_shm.format == QWS_FORMAT_ARGB32_PREMULTIPLIED) {
+#ifdef HAVE_ALPHA_MODIFIER_V1
+        assert(!win->alpha_modifier_surface);
+#endif
+        src_fmt = PIXMAN_a8r8g8b8;
+        blit_alpha = 255;
+    } else {
+        src_fmt = PIXMAN_x8r8g8b8;
+        blit_alpha = alpha_modifier_available(state) ? 255 : win->opacity;
+    }
+
+    const int stride = win->server_shm.width * (int)sizeof(uint32_t);
+
+    pixman_image_t *src_img = pixman_image_create_bits_no_clear(
+        src_fmt, win->server_shm.width, win->server_shm.height, (uint32_t *)src,
+        stride);
+
+    pixman_image_t *dst_img = pixman_image_create_bits_no_clear(
+        PIXMAN_a8r8g8b8, win->server_shm.width, win->server_shm.height,
+        (uint32_t *)win->server_shm.pixels, stride);
+
+    /* Solid-fill mask carrying the opacity — NULL (fast path) when fully
+     * opaque. */
+    pixman_image_t *mask_img = NULL;
+    if (blit_alpha < 255) {
+        pixman_color_t c = {.alpha = (uint16_t)(blit_alpha * 257u)};
+        mask_img = pixman_image_create_solid_fill(&c);
+    }
+
     for (int i = 0; i < nrects; i++) {
         int32_t copy_x = translated_rects[i].x1;
         int32_t copy_y = translated_rects[i].y1;
         int32_t copy_w = translated_rects[i].x2 - translated_rects[i].x1 + 1;
         int32_t copy_h = translated_rects[i].y2 - translated_rects[i].y1 + 1;
 
-        int32_t row_offset = copy_x * bytes_per_pixel;
-        int32_t row_bytes = win->server_shm.width * bytes_per_pixel;
-
-        for (int32_t j = 0; j < copy_h; j++) {
-            int32_t y = copy_y + j;
-            if (y > win->server_shm.height)
-                break;
-
-            int32_t off = row_offset + (y * row_bytes);
-            memcpy((uint8_t *)win->server_shm.pixels + off,
-                   (const uint8_t *)src + off, copy_w * bytes_per_pixel);
-        }
+        pixman_image_composite32(PIXMAN_OP_SRC, src_img, mask_img, dst_img,
+                                 copy_x, copy_y, 0, 0, copy_x, copy_y, copy_w,
+                                 copy_h);
 
         if (state->debug_draw_rects)
             draw_debug_border(win, copy_x, copy_y, copy_w, copy_h, 0xFFFF0000);
 
         wl_surface_damage(win->wl_surface, copy_x, copy_y, copy_w, copy_h);
     }
+
+    pixman_image_unref(src_img);
+    pixman_image_unref(dst_img);
+    if (mask_img)
+        pixman_image_unref(mask_img);
 
     if (state->debug_draw_rects)
         draw_debug_border(win, 0, 0, win->server_shm.width,
@@ -865,22 +923,17 @@ void qwswl_hide_window(qwswl_state_t *state, qwswl_window_t *win) {
 
 void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win,
                        uint8_t opacity) {
-    /* prevent unnecessary operations that might even lead to irrelevant
-     * warnings */
+    /* prevent unnecessary operations. */
     if (win->opacity == opacity)
         return;
 
     win->opacity = opacity;
 
-#ifdef HAVE_ALPHA_MODIFIER_V1
-    if (!state->wp_alpha_modifier) {
-        fprintf(stderr,
-                "[qwswayland] warning: wp_alpha_modifier_v1 not supported"
-                " by compositor, ignoring opacity for window %d\n",
-                win->qws_id);
+    if (!alpha_modifier_available(state)) {
         return;
     }
 
+#ifdef HAVE_ALPHA_MODIFIER_V1
     if (!win->alpha_modifier_surface) {
         win->alpha_modifier_surface = wp_alpha_modifier_v1_get_surface(
             state->wp_alpha_modifier, win->wl_surface);
@@ -898,13 +951,6 @@ void qwswl_set_opacity(qwswl_state_t *state, qwswl_window_t *win,
     wp_alpha_modifier_surface_v1_set_multiplier(win->alpha_modifier_surface,
                                                 factor);
     wl_surface_commit(win->wl_surface);
-#else
-    (void)state;
-    (void)win;
-    fprintf(stderr,
-            "[qwswayland] warning: wp_alpha_modifier_v1 not available"
-            " at build time, ignoring opacity for window %d\n",
-            win->qws_id);
 #endif
 }
 

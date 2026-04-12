@@ -142,7 +142,7 @@ enum qws_command_type {
  * Used in qws_cmd_region_surface_data_shm_t::format
  * ----------------------------------------------------------- */
 
-enum qws_image_format {
+typedef enum {
     QWS_FORMAT_INVALID = 0,
     QWS_FORMAT_MONO = 1,
     QWS_FORMAT_MONO_LSB = 2,
@@ -160,7 +160,7 @@ enum qws_image_format {
     QWS_FORMAT_RGB444 = 14,
     QWS_FORMAT_ARGB4444_PREMULTIPLIED = 15,
     QWS_FORMAT_NFORMATS = 16, /* sentinel */
-};
+} qws_image_format_t;
 
 /* Qt::WindowType values (from qnamespace.h, Qt 4.8) */
 typedef int32_t qws_window_flags_t;
@@ -217,6 +217,12 @@ typedef int32_t qws_window_flags_t;
 enum qws_surface_flag {
     QWS_SURFACE_REGION_RESERVED = 0x1,
     QWS_SURFACE_BUFFERED = 0x2,
+    /* Turns out this flag was not what I thought it was... again. This is
+     * apparently a rendering hint sent by the QWS client to tell its server
+     * that it does not need to re-render anything below this region, since it
+     * will be fully covered by the content of the repaint. Well, yes, then we
+     * are not interested in this at all, since Wayland is handling all of that
+     * for us.*/
     QWS_SURFACE_OPAQUE = 0x4,
 };
 

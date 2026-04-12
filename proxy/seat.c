@@ -430,6 +430,12 @@ static void keyboard_keymap(void *data, struct wl_keyboard *kbd,
     qwswl_keyboard_state_t *kbd_state = &state->kbd_state;
 
     if (format == WL_KEYBOARD_KEYMAP_FORMAT_NO_KEYMAP) {
+        /* This likely means that the compositor was compiled without support
+         * for libxkbcommon... and we will then likely not be able to guess the
+         * keyboard correctly. This likely only applies to an embedded
+         * compositor like Qt.
+         *
+         * TODO: give the user an option to specify the keyboard layout */
         close(fd);
         kbd_state->xkb_keymap = xkb_keymap_new_from_names(
             state->xkb_context, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);

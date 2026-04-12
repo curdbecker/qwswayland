@@ -64,6 +64,8 @@ wayland_proto_lib = static_library('wayland_proto_generated',
   c_args: ['-w'],
 )
 
+pixman = dependency('pixman-1')
+
 executable('qwswayland',
   proxy_sources,
   link_with: wayland_proto_lib,
@@ -72,6 +74,7 @@ executable('qwswayland',
   dependencies: [
     qwsproto_dep,
     wayland_client,
+    pixman,    
     xkbcommon,
     stc,
     screen_interposer_deps,
